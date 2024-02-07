@@ -1,0 +1,4152 @@
+// Genus3.magma
+// Version 1.0
+// 25 January 2024
+
+// Everett W. Howe:
+// Enumerating hyperelliptic curves over finite fields in quasilinear time,
+// preprint.
+
+/*
+================================================================================
+WARNING:
+Especially in the function eightpoints71(), this code uses some optimizations
+that are explained very briefly in the comments. Each function that computes
+orbits of a given Galois type in Sym^n includes a consistency check at the end,
+to make sure that the weighted number of orbit representatives is equal to the
+prediction made by theory. While this is encouraging, it would still be 
+worthwhile to provide more explanation for how the optimizations work.
+*/
+
+
+/* 
+================================================================================
+This collection of Magma routines is designed to produce a list of all genus-3
+curves over a given finite field of odd characteristic, up to isomorphism. It
+includes routines to compute a complete set of unique representatives for the 
+orbits of PGL_2(F_q) acting on monic septic and octic polynomials of a given
+"Galois type," as defined in the paper. These routines also return the
+PGL_2(F_q) stabilizers of the polynomials it returns. From this information it 
+is straightforward to find the one or two hyperelliptic curves associated to the
+polynomials, as well as their automorphism groups.
+
+The programs for computing representatives of the PGL_2 orbits of polynomials
+with a given Galois type are named for their Galois types:
+
+
+eightpoints11111111()
+eightpoints2111111()
+eightpoints221111()
+eightpoints22211()
+eightpoints2222()
+eightpoints311111()
+eightpoints32111()
+eightpoints3221()
+eightpoints3311()
+eightpoints332()
+eightpoints41111()
+eightpoints4211()
+eightpoints422()
+eightpoints431()
+eightpoints44()
+eightpoints5111()
+eightpoints521()
+eightpoints53()
+eightpoints611()
+eightpoints62()
+eightpoints71()
+eightpoints8()
+
+We also will need to have orbit representatives for the action of PGL_2(F_q) on
+some polynomials of smaller degrees. Mostly we get these functions by loading
+the file "Genus2.magma", but there are a couple of additional actions that we
+need here:
+
+fivepoints11111()
+fivepoints5()
+
+We also obtain many utility functions from Genus2.magma, which are listed in the
+introductory comments of that file. In addition, we introduce a few more:
+
+automorphisms11111() :
+                  Given a set of five points in P^1(K), compute the PGL_2(K)
+                  stabilizer of the set.
+                  
+automorphisms11111111() :
+                  Given a set of eight points in P^1(K), compute the PGL_2(K)
+                  stabilizer of the set.
+
+automorphisms2222() :
+                  Given a set of four pairs of conjugate points in P^1(L),
+                  where L is the quadratic extension of a finite field K.
+                  compute the PGL_2(K) stabilizer of the set.
+
+betareduce()    : Given elements alpha, beta, and g of the quadratic extension L
+                  of a finite field K, where beta^2 is a nonsquare in K and g is
+                  a generator of L^*, compute the "reduced form" of alpha with
+                  respect to beta. By this we mean the representative of the
+                  orbit of alpha under the action of the elements of PGL(2,K) 
+                  that fix beta, as computed by the function betaorbitreps().
+
+cross()         : Given an irreducible polynomial f of degree at least 4 over
+                  a finite field K, compute the irreducible factor of its
+                  "cross polynomial," as defined in the paper.
+
+PGL2reduce()    : Given a matrix representing an element of PGL(2,q^2), find the
+                  standard representative of its PGL(2,q) orbit, as computed by
+                  the function PGL2reps().
+                  
+quarticrepsquad() :
+                  Given a finite field K of odd characteristic, let L be its
+                  quadratic extension and let M be its quartic extension. We
+                  return representatives for the orbits of sets of four
+                  conjugate elements of P^1(M), under the combined action of
+                  PGL_2(L) and Gal(L/K). We do *not* return a representative
+                  of the orbit containing four points whose j-invariant is 0.
+
+                  
+================================================================================
+
+VERSION HISTORY:
+
+
+--------------------------------------------------------------------------------
+Version 1.0, 25 January 2024.
+First released version. Revision/cleanup/simplification of initial code.
+
+
+
+--------------------------------------------------------------------------------
+
+To do: 
+
+* A serious code review to check for accuracy and clarity.
+* Go through and check comments for thoroughness and accuracy.
+
+================================================================================
+*/
+
+
+// NOTE: Throughout we assume we are working over fields of characteristic > 2.
+
+
+/*
+================================================================================
+Loading genus-2 code.
+================================================================================
+*/
+
+load "Hyperelliptic2.magma";
+
+/*
+================================================================================
+Utility functions.
+================================================================================
+*/
+
+function automorphisms11111(aa,bb)
+
+  // Compute the PGL_2(K) stabilizer of the set {oo, 0, 1, aa, bb}
+
+  K := Parent(aa+bb);
+  q := #K;
+  
+  I := Matrix(2,[K|1,0,0,1]);
+
+  r := [0, 1, aa, bb];
+
+  // Compute (1/32 times) the j-invariants of the four subsets of
+  // {oo, 0, 1, aa, bb} that contain oo and three other elements. These first
+  // values are used repeatedly in the calculation of the j-invariants.
+  
+  r12 := 1;
+  r13 := aa^2;
+  r14 := bb^2;
+  r23 := (aa-1)^2;
+  r24 := (bb-1)^2;
+  r34 := (aa-bb)^2;
+
+  jset := { (r12 + r13 + r23)^3 / (r12*r13*r23),
+            (r12 + r14 + r24)^3 / (r12*r14*r24),
+            (r13 + r14 + r34)^3 / (r13*r14*r34),
+            (r23 + r24 + r34)^3 / (r23*r24*r34)};
+
+  // If the set has nontrivial automorphisms, there can be at most two
+  // distinct j-invariants here. So return [I] if there are more.
+
+  if #jset gt 3 then return [I]; end if;
+  
+  // Add in the j-invariant of the set {0,1,aa,bb} and check again.
+    
+  jset join:= {quickj4([r[1],r[2],r[3],r[4]])};
+  
+  if #jset gt 3 then return [I]; end if;
+
+  // At this point there may well be nontrivial automorphisms. Let's find them.
+
+  lfts := [];
+  
+  rootsf := [ [a,1] : a in r ];
+  rootsf cat:= [[1,0]]; 
+  a, b, c, d, e := Explode(rootsf);
+
+  for i,j,k in [1..5] do 
+    if #{i,j,k} eq 3 then
+      A := rootsf[i];
+      B := rootsf[j];
+      C := rootsf[k];
+      // Find r,s,t,u such that (r*x + s)/(t*x + u) sends a to A, b to B, c to C
+          
+      M := Matrix(3,4,[a[1]*A[2],a[2]*A[2],-a[1]*A[1],-a[2]*A[1],
+                       b[1]*B[2],b[2]*B[2],-b[1]*B[1],-b[2]*B[1],
+                       c[1]*C[2],c[2]*C[2],-c[1]*C[1],-c[2]*C[1] ]);
+      BB := Basis(Nullspace(Transpose(M)))[1];
+      r := BB[1];
+      s := BB[2];
+      t := BB[3];
+      u := BB[4];
+          
+      imaged := [r*d[1] + s*d[2], t*d[1] + u*d[2]];
+      imagee := [r*e[1] + s*e[2], t*e[1] + u*e[2]];
+      
+      // These are images in P^1(K). Normalize the representatives.
+      
+      if imaged[2] ne 0 then imaged := [imaged[1]/imaged[2],1]; else imaged := [K!1,0]; end if;
+      if imagee[2] ne 0 then imagee := [imagee[1]/imagee[2],1]; else imagee := [K!1,0]; end if;
+      if imaged in rootsf and imagee in rootsf then lfts cat:= [[r,s,t,u]]; end if;
+    end if;
+  end for;
+
+  standardLFTs := [];
+  for z in lfts do
+    if z[3] ne 0 then
+      standardLFTs cat:= [ [K!(z[1]/z[3]), K!(z[2]/z[3]), K!1, K!(z[4]/z[3])] ];
+    else
+      standardLFTs cat:= [ [K!(z[1]/z[4]), K!(z[2]/z[4]), K!0, K!1] ];
+    end if;
+  end for;
+  standardLFTs := Sort([a : a in Set(standardLFTs)]);
+  return [Matrix(2,L) : L in standardLFTs];
+end function;
+ 
+
+
+//------------------------------------------------------------------------------
+
+
+function automorphisms11111111(f);
+  // Given a separable polynomial of degree 7 or 8 with all roots rational, find
+  // the PGL_2(K) stabilizer of its roots in P^1 (plus oo, if the degree is 7).
+  // We only call this function when we know there are nontrivial automorphisms.
+  // If we want to use it in other situations, we might want to add some initial
+  // testing to avoid doing the whole computation when the answer is easily
+  // seen to be trivial. The structure of the algoritm is identical to that
+  // of automorphisms11111().
+
+  K := BaseRing(Parent(f));
+  I := Matrix(2,[K|1,0,0,1]);
+  
+  r := [a[1] : a in Roots(f)];
+  assert #r in {7,8};
+
+  lfts := [];
+  
+  rootsf := [ [a,1] : a in r ];
+  if #rootsf eq 7 then 
+    rootsf cat:= [[1,0]]; 
+  end if;
+  
+  ra, rb, rc, rd, re, rf, rg, rh := Explode(rootsf);
+
+  for i,j,k in [1..8] do 
+    if #{i,j,k} eq 3 then
+      A := rootsf[i];
+      B := rootsf[j];
+      C := rootsf[k];
+      // find r,s,t,u such that (r*x + s)/(t*x + u) sends ra to A, rb to B, rc to C
+          
+      M := Matrix(3,4,[ra[1]*A[2],ra[2]*A[2],-ra[1]*A[1],-ra[2]*A[1],
+                       rb[1]*B[2],rb[2]*B[2],-rb[1]*B[1],-rb[2]*B[1],
+                       rc[1]*C[2],rc[2]*C[2],-rc[1]*C[1],-rc[2]*C[1] ]);
+      BB := Basis(Nullspace(Transpose(M)))[1];
+      r := BB[1];
+      s := BB[2];
+      t := BB[3];
+      u := BB[4];
+          
+      imaged := [r*rd[1] + s*rd[2], t*rd[1] + u*rd[2]];
+      imagee := [r*re[1] + s*re[2], t*re[1] + u*re[2]];
+      imagef := [r*rf[1] + s*rf[2], t*rf[1] + u*rf[2]];
+      imageg := [r*rg[1] + s*rg[2], t*rg[1] + u*rg[2]];
+      imageh := [r*rh[1] + s*rh[2], t*rh[1] + u*rh[2]];
+
+      if imaged[2] ne 0 then imaged := [imaged[1]/imaged[2],1]; else imaged := [K!1,0]; end if;
+      if imagee[2] ne 0 then imagee := [imagee[1]/imagee[2],1]; else imagee := [K!1,0]; end if;
+      if imagef[2] ne 0 then imagef := [imagef[1]/imagef[2],1]; else imagef := [K!1,0]; end if;
+      if imageg[2] ne 0 then imageg := [imageg[1]/imageg[2],1]; else imageg := [K!1,0]; end if;
+      if imageh[2] ne 0 then imageh := [imageh[1]/imageh[2],1]; else imageh := [K!1,0]; end if;
+      if imaged in rootsf and imagee in rootsf and imagef in rootsf and imageg in rootsf and imageh in rootsf then lfts cat:= [[r,s,t,u]]; end if;
+    end if;
+  end for;
+
+  standardLFTs := [];
+  for z in lfts do
+    if z[3] ne 0 then
+      standardLFTs cat:= [ [K!(z[1]/z[3]), K!(z[2]/z[3]), K!1, K!(z[4]/z[3])] ];
+    else
+      standardLFTs cat:= [ [K!(z[1]/z[4]), K!(z[2]/z[4]), K!0, K!1] ];
+    end if;
+  end for;
+  standardLFTs := Sort([a : a in Set(standardLFTs)]);
+  return [Matrix(2,L) : L in standardLFTs];
+end function;
+
+//------------------------------------------------------------------------------
+
+function automorphisms2222(f)
+  R := Parent(f);
+  x := R.1;
+  K := BaseRing(R);
+  L := ext<K|2>;
+  auts := [];
+  q1,q2,q3,q4 := Explode([a[1] : a in Factorization(f)]);
+  j12 := j_quartic(q1*q2);
+  j13 := j_quartic(q1*q3);
+  j23 := j_quartic(q2*q3);
+  j14 := j_quartic(q1*q4);
+  j24 := j_quartic(q2*q4);
+  j34 := j_quartic(q3*q4);
+  
+  Jmat := Matrix(4,[  0,j12,j13,j14,
+                    j12,  0,j23,j24,
+                    j13,j23,  0,j34,
+                    j14,j24,j34,  0]);
+  
+  r1 := [a[1] : a in Roots(q1,L)];
+  r2 := [a[1] : a in Roots(q2,L)];
+  r3 := [a[1] : a in Roots(q3,L)];
+  r4 := [a[1] : a in Roots(q4,L)];
+  rs := [r1,r2,r3,r4];
+  
+  alpha1 := r1[1];
+  alpha2 := r1[2];
+  alpha3 := r2[1];
+  M1 := Matrix(2,[alpha1*(alpha3-alpha2), alpha2*(alpha1-alpha3), (alpha3-alpha2), (alpha1-alpha3)]);
+  
+  for s,t in [1..4] do
+    if s ne t and Jmat[s,t] eq j12 then
+      for u,v in [1,2] do
+        beta1 := rs[s][u];
+        beta2 := rs[s][3-u];
+        beta3 := rs[t][v];
+        M2 := Matrix(2,[beta1*(beta3-beta2), beta2*(beta1-beta3), (beta3-beta2), (beta1-beta3)]);
+        M3 := PGLreduce(M2*M1^-1);
+        if &and[z in K : z in Eltseq(M3)] then
+          M3 := Matrix(2,[K!z : z in Eltseq(M3)]);
+          g := Numerator(Evaluate(f,(M3[1,1]*x + M3[1,2])/(M3[2,1]*x + M3[2,2]))*(M3[2,1]*x + M3[2,2])^8);
+          g := g/Coefficient(g,8);
+          if f eq g then
+            auts cat:= [M3];
+          end if;
+        end if;
+      end for;
+    end if;
+  end for;
+  
+  return auts;
+end function;
+
+//------------------------------------------------------------------------------
+
+function betareduce(alpha, beta, gen,K)
+  // Given elements alpha, beta, and gen of the quadratic extension L
+  // of a finite field K such that beta^2 is a nonsquare in K
+  // and gen is a generator of L^*, compute the "reduced form" of alpha
+  // with respect to beta. This is the representative of the orbit of
+  // alpha under the action of the elements of PGL(2,K) that fix beta,
+  // as compute by the function betaorbitreps.
+  
+  if alpha in {beta,-beta} then return alpha; end if;
+  
+  gamma := (alpha-beta)/(alpha+beta);
+  log := Log(gen,gamma);
+  i := log mod (#K-1);
+  return beta*(1-gen^i)/(1+gen^i);
+end function;
+
+
+//------------------------------------------------------------------------------  
+
+function cross(f)
+  // Given an irreducible f, compute the irreducible factor of its cross
+  // polynomial, as defined in the paper. (To compute the actual cross
+  // polynomial, we would replace "MinimalPolynomial" with 
+
+  // "CharacteristicPolynomial" below.)
+  K := BaseRing(Parent(f));
+  q := #K;
+  L := ext<K|Degree(f)>;
+  S<y>:=PolynomialRing(L);  
+  alpha1 := Roots(f,L)[1][1];
+  alpha2 := alpha1^q;
+  alpha3 := alpha2^q;
+  alpha4 := alpha3^q;
+  j := (alpha4-alpha2)*(alpha3-alpha1) / (alpha4-alpha1) / (alpha3-alpha2);
+  return MinimalPolynomial(j,K);
+end function;
+ 
+//------------------------------------------------------------------------------  
+  
+function PGL2reduce(M,K,L,ns)
+  // Given a matrix representing an element of PGL(2,q^2), find the standard
+  // representative of its PGL(2,q) orbit. K is our copy of GF(q), L is 
+  // our copy of GF(q^2), ns is a nonsquare in K.
+  
+  beta := Roots(PolynomialRing(L)![-ns,0,1])[1][1];
+  gen := PrimitiveElement(L);
+
+  M := PGLreduce(M);
+  
+  firstinfinity := false;
+  if M[2,1] eq 0 then 
+    firstinfinity := true;
+  else
+    zeta := M[1,1]/M[2,1];
+    if zeta in K then
+      N := Matrix(2,[0,1,1,-zeta]);
+      M := PGLreduce(N*M);
+      firstinfinity := true;
+    end if;
+  end if;
+  if firstinfinity then
+    zeroval := M[1,2]/M[2,2];
+    if zeroval in K then
+      N := Matrix(2,[1,-zeroval,0,1]);
+      M := N*M;
+      assert M[1,2] eq 0;
+      assert M[2,1] eq 0;
+      M := M/M[2,2];
+
+      oneval := (M[1,1]+M[1,2])/(M[2,1]+M[2,2]);
+      if oneval in K then 
+        c := oneval; 
+      else
+        c := Trace(oneval/beta,K)/2;
+      end if;
+      
+      N := Matrix(2,[1,0,0,c]);
+      M := PGLreduce(N*M);
+      return M;
+    end if;
+    // So at this point our triple is [oo, zeroval, oneval] with zeroval
+    // not in K. That means we should move zeroval to beta.
+    
+    a := Trace(zeroval,K)/2;
+    b := Trace(zeroval/beta,K)/2;
+    N := Matrix(2,[1,-a,0,b]);
+    M := PGLreduce(N*M);
+    return M;
+  end if;
+
+  // So infinityval is not in K. Move it to beta.
+  infinityval := M[1,1]/M[2,1];
+  a := Trace(infinityval,K)/2;
+  b := Trace(infinityval/beta,K)/2;
+  N := Matrix(2,[1,-a,0,b]);
+  M := PGLreduce(N*M);
+  assert M[1,1] eq beta;
+  
+  if M[2,2] eq 0 then
+    // 0 is getting sent to oo. Compose with x --> ns/x.
+    N := Matrix(2,[L|0,ns,1,0]);
+    M := PGLreduce(N*M);
+  end if;
+
+  zeroval := M[1,2]/M[2,2];
+  if zeroval eq -beta then
+    // At this point, we are free to compose with elements of PGL2(K) that
+    // fix beta (and -beta). First let's make sure theta is not infinity.
+    if M[2,1] + M[2,2] eq 0 then
+      N := Matrix(2,[L|0,ns,1,0]);
+      M := PGLreduce(N*M);
+      assert M[1,1] eq beta and M[1,2] eq -beta;
+    end if;
+    
+    oneval := (M[1,1] + M[1,2]) / (M[2,1] + M[2,2]);
+    newoneval := betareduce(oneval,beta,gen,K);
+    if oneval eq newoneval then return M; end if;
+    
+    // Find the element of PGL(2,K) that fixes beta and sends oneval to 
+    // newoneval:
+    
+    // N := [a, ns; 1, a]
+    // a*val + ns = (val + a)*newval
+    // a*val + ns = a*newval + val*newval
+    // a*(val-newval) = val*newval - ns
+    // a := (val*newval - ns)/(val-newval)
+    
+    a := (oneval*newoneval - ns)/(oneval-newoneval);
+    N := Matrix(2,[a,ns,1,a]);
+    M := PGLreduce(N*M);
+    return M;
+  end if;
+  
+  // At this point, zeta = beta and eta != -beta, so we move it
+  // by elements of PGL(2,K) that fix beta.
+  
+  newzeroval := betareduce(zeroval,beta,gen,K);
+  if zeroval eq newzeroval then return M; end if;
+  
+  a := (zeroval*newzeroval - ns)/(zeroval-newzeroval);
+  N := Matrix(2,[a,ns,1,a]);
+  M := PGLreduce(N*M);
+  return M;
+end function;
+
+//------------------------------------------------------------------------------
+
+function quarticrepsquad(K)
+  // Given a finite field K of odd characteristic, and let L be the
+  // quadratic extension of K. We want to find representatives for
+  // the PGL(2,L) orbits of sets of four conjugate elements of P^1.
+  // We represent such sets by monic separable polynomials of degree 4 over L.
+  // We only care up to conjugation over K.
+  // ===> And we will not return the j = 0 quartic.
+  
+  q := #K;
+  L := ext<K|2>;
+  R<x>:=PolynomialRing(K);
+  S<y>:=PolynomialRing(L);
+  M := ext<L|2>;
+  T<z>:=PolynomialRing(M);
+  ns := nonsquare(L);
+  beta := Roots(y^2-ns,M)[1][1];
+  
+  gen := PrimitiveElement(M);
+  list := [];
+
+  for i in [1..(q^2-1) div 2 by 2] do 
+  // This loop stops here because when i = (q^2+1)/2 we get the j=1728 quartic.
+    j := (i*q) mod (q^2 + 1);
+    if j gt ((q^2+1) div 2) then j := q^2 + 1 - j; end if;
+    assert j gt 0 and j le ((q^2+1) div 2);
+    if i le j then
+      f := z^2 - gen^i;
+      g := Numerator(Evaluate(f,(1+z)/(1-z)));
+      g := g/Coefficient(g,2);
+      assert Coefficient(g,0) eq 1;
+      c := Coefficient(g,1);
+      cbar := Trace(c,L) - c;
+      list cat:= [<S!(g*(z^2 + cbar*z + 1)),L!1>];
+    end if;
+  end for;
+
+  for i in [1..(q^2-1) div 2 by 2] do
+    j := (i*q) mod (q^2 - 1);
+    if j gt ((q^2-1) div 2) then j := q^2 - 1 - j; end if;
+    assert j gt 0 and j le ((q^2-1) div 2);
+    if i le j then
+      f := z^2 - gen^i;
+      g := Numerator(Evaluate(f,(beta+z)/(beta-z)));
+      g := g/Coefficient(g,2);
+      assert Coefficient(g,0) eq ns;
+      c := Coefficient(g,1);
+      cbar := Trace(c,L) - c;
+      list cat:= [<S!(g*(z^2 + cbar*z + ns)),ns>];
+    end if;
+  end for;
+
+  return list;
+end function;
+
+/*
+================================================================================
+Functions for producing certain orbit representatives for Sym^5.
+================================================================================
+*/
+
+function fivepoints5(K);
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  biglist := [];
+
+
+  L:=ext<K|5>;
+  // Find a normal basis.
+  i := 0;
+  g := PrimitiveElement(L);
+  repeat 
+    i +:= 1;
+    a1 := g^i;
+    M := Matrix(5, 5, &cat[Eltseq(a1^(q^i),K) : i in [0..4]]);
+  until Rank(M) eq 5;
+
+  a1 := a1/Trace(a1,K);
+  a2 := a1^q;
+  a3 := a2^q;
+  a4 := a3^q;
+  a5 := a4^q;
+
+  b1 := K!0;
+  b2 := K!1;
+  for b3 in K do
+    for b4 in K do
+      for b5 in K do
+        biglist cat:= [MinimalPolynomial(b1*a1 + b2*a2 + b3*a3 + b4*a4 + b5*a5,K)];
+      end for;
+    end for;
+  end for;
+    
+  b1 := K!0;
+  b2 := K!0;
+  b3 := K!1;
+  for b4 in K do
+    for b5 in K do
+      biglist cat:= [MinimalPolynomial(b1*a1 + b2*a2 + b3*a3 + b4*a4 + b5*a5,K)];
+    end for;
+  end for;
+    
+  b1 := K!0;
+  b2 := K!0;
+  b3 := K!0;
+  b4 := K!1;
+
+  for b5 in K do
+    biglist cat:= [MinimalPolynomial(b1*a1 + b2*a2 + b3*a3 + b4*a4 + b5*a5,K)];
+  end for;
+
+  b1 := K!0;
+  b2 := K!0;
+  b3 := K!0;
+  b4 := K!0;
+  b5 := K!1;
+ 
+  biglist cat:= [MinimalPolynomial(b1*a1 + b2*a2 + b3*a3 + b4*a4 + b5*a5,K)];
+
+
+  jlist := [cross(b) : b in biglist];
+  ParallelSort(~jlist,~biglist);
+
+  shortlist := [];
+  I := Matrix(2,[K|1,0,0,1]);
+
+  
+  i := 1;
+  repeat
+    j := i;
+    repeat j+:=1; 
+    until j gt #jlist or jlist[j] ne jlist[i];
+    j -:=1;
+
+    if Degree(jlist[j]) eq 5 then    
+      shortlist cat:= [<biglist[j],1,[I]>];
+    else
+      // When the degree is 1, there are special forms...
+      case q mod 5:
+        when 1:
+          zeta := Roots(x^4 + x^3 + x^2 + x + 1,K)[1][1];
+          M := Matrix(2,[zeta,0,0,1]);
+          f := biglist[j];
+//          assert Coefficients(f) eq [Coefficient(f,0),0,0,0,0,1];
+          shortlist cat:= [<f, 5, [M^i : i in [0..4]]>];
+        when 0:
+          M := Matrix(2,[1,1,0,1]);
+          f := biglist[j];
+//          assert Coefficients(f) eq [Coefficient(f,0),-1,0,0,0,1];
+          shortlist cat:= [<f, 5, [M^i : i in [0..4]]>];
+        when 4:
+          phi := -1+Roots(jlist[j])[1][1];
+          assert phi^2 + phi - 1 eq 0;
+          M := Matrix(2,[0,phi-1,1,1]);
+          for a in K do
+            f := R![-5*phi + 3, (2*phi - 1)*a - 10*phi + 5, 2*phi*a + 10*phi - 10, 2*a + 10*phi - 10, a, 1];
+            if IsIrreducible(f) then break a; end if;
+          end for;
+          assert IsIrreducible(f);
+          shortlist cat:= [<f, 5, [M^i : i in [0..4]]>];
+        else:
+          assert false;
+      end case;
+    end if;
+      
+    i := j+1;
+  until i gt #jlist;    
+  
+  assert &+[1/m[2] : m in shortlist] eq (q^2+1)/5;
+  
+  return shortlist;
+end function;
+
+
+
+//------------------------------------------------------------------------------
+
+function fivepoints11111(K)
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable quintuples
+  // of elements of P^1(K).
+  
+  // Note that the number of such quintuples is (q+1) choose 5. Dividing this by
+  // the size of PGL(2,q) we get (q-2)*(q-3)/120.
+  // Therefore, the sum over all representatives of 1 over the 
+  // stabilizer of the representative should be (q-2)*(q-3)/120.
+  // We check this at the end.
+  q := #K;
+  sortKstar := Sort([a : a in K | a ne 0]);
+  R<x>:=PolynomialRing(K);
+  polys11111 := [];
+  I := Matrix(2,[K|1,0,0,1]);
+  
+  
+  for i1 in [1..q-4] do
+    a1 := sortKstar[i1];
+    for i2 in [i1+1..q-3] do
+      a2 := sortKstar[i2];
+      a3 := 1 - a1 - a2 ;
+      if a2 ge a3 then continue i2; end if;
+            
+      auts := false;
+            
+      basecase := Sort([a1,a2,a3]);
+            
+      for i in [1..3] do
+        if 1 ne 4*basecase[i] then
+          s := 1/(1-4*basecase[i]);
+          newcase := Sort([-basecase[i]*s] cat [(basecase[j]-basecase[i])*s : j in [1..3] | j ne i]);
+          if newcase lt basecase then continue i2; end if;
+          if newcase eq basecase then auts:= true; end if;
+        end if;
+      end for;
+            
+      // Put 0 at oo.
+           
+      newbase := [1/basecase[i] : i in [1..3]];
+
+      sum := &+newbase;
+      if sum ne 0 then
+        s := 1/sum;
+        newcase := Sort([a*s : a in newbase]);
+        if newcase lt basecase then continue i2; end if;
+        if newcase eq basecase then auts:= true; end if;
+      end if;
+              
+      for j in [1..3] do
+        if sum ne 4*newbase[j] then
+          s := 1/(sum-4*newbase[j]);
+          newcase := Sort([-newbase[j]*s] cat [(newbase[k]-newbase[j])*s : k in [1..3] | k ne j]);
+          if newcase lt basecase then continue i2; end if;
+          if newcase eq basecase then auts:= true; end if;
+        end if;
+      end for;
+
+      for i in [1..3] do
+        // send ai to oo and oo to 0... x --> 1/(x-ai)
+        newbase := [-1/basecase[i]] cat [1/(basecase[j]-basecase[i]) : j in [1..3] | j ne i];
+          
+        sum := &+newbase;
+        if sum ne 0 then
+          s := 1/sum;
+          newcase := Sort([a*s : a in newbase]);
+          if newcase lt basecase then continue i2; end if;
+          if newcase eq basecase then auts:= true; end if;
+        end if;
+              
+        for j in [1..3] do
+          if sum ne 4*newbase[j] then
+            s := 1/(sum-4*newbase[j]);
+            newcase := Sort([-newbase[j]*s] cat [(newbase[k]-newbase[j])*s : k in [1..3] | k ne j]);
+            if newcase lt basecase then continue i2; end if;
+            if newcase eq basecase then auts:= true; end if;
+          end if;
+        end for;
+      end for;
+              
+        // We got one!
+              
+      aa := a2/a1;
+      bb := a3/a1;
+      f := x*(x-1)*(x-aa)*(x-bb);
+      if auts then
+        autgroup := automorphisms11111(aa,bb);
+      else
+        autgroup := [I];
+      end if;
+      polys11111 cat:= [<f,#autgroup,autgroup>];
+              
+    end for;
+  end for;
+
+  count := 0;
+  if #polys11111 gt 0 then count := &+[1/z[2] : z in polys11111]; end if;
+  
+  assert count eq (q-2)*(q-3) / 120;
+  
+  return polys11111;
+end function;
+
+/*
+================================================================================
+Functions for producing orbit representatives for Sym^8.
+================================================================================
+*/
+
+function eightpoints11111111(K)
+  // Find PGL2(K) orbit reps for eight points of P^1(K). 
+  //
+  // What is our normal form?
+  //   Given eight points, put one at infinity, one at 0, and ask that the sum
+  //   of the rest be 1. This may not be possible for the given choice of points
+  //   to put at oo and 0... but it is possible for *some* choice, with one
+  //   exception: When K = GF(7) and the eight points are the elements 
+  //   of P^1(K). We treat that one case separately.
+  // 
+  // So: Loop a1 < a2 < ... < a5 and set a6 = 1 - a1 - a2 - a3 - a4 - a5.
+  // Demand that a5 < a6.
+  //
+  // In turn, shift each a_i to 0 and readjust scaling. Demand that our original
+  // a1 through a6 be smaller than these new values.
+  //
+  // In turn, move each a_i to infinity, and repeat same loop as above, 
+  // and again demand that our original a1 through a6 are the smallest.
+
+  q := #K;
+  if q lt 7 then return []; end if;
+  sortKstar := Sort([a : a in K | a ne 0]);
+  R<x>:=PolynomialRing(K);
+  polys11111111 := [];
+  I := Matrix(2,[K|1,0,0,1]);
+  
+  
+  for i1 in [1..q-6] do
+    a1 := sortKstar[i1];
+    for i2 in [i1+1..q-5] do
+      a2 := sortKstar[i2];
+      for i3 in [i2+1..q-4] do
+        a3 := sortKstar[i3];
+        for i4 in [i3+1..q-3] do
+          a4 := sortKstar[i4];
+          for i5 in [i4+1..q-2] do
+            a5 := sortKstar[i5];
+            a6 := 1 - a1 - a2 - a3 - a4 - a5;
+            if a5 ge a6 then continue i5; end if;
+            
+            auts := false;
+            
+            basecase := Sort([a1,a2,a3,a4,a5,a6]);
+            
+            for i in [1..6] do
+              if 1 ne 7*basecase[i] then
+                s := 1/(1-7*basecase[i]);
+                newcase := Sort([-basecase[i]*s] cat [(basecase[j]-basecase[i])*s : j in [1..6] | j ne i]);
+                if newcase lt basecase then continue i5; end if;
+                if newcase eq basecase then auts:= true; end if;
+              end if;
+            end for;
+            
+            // Put 0 at oo.
+           
+            newbase := [1/basecase[i] : i in [1..6]];
+              
+            sum := &+newbase;
+            if sum ne 0 then
+              s := 1/sum;
+              newcase := Sort([a*s : a in newbase]);
+              if newcase lt basecase then continue i5; end if;
+              if newcase eq basecase then auts:= true; end if;
+            end if;
+              
+            for j in [1..6] do
+              if sum ne 7*newbase[j] then
+                s := 1/(sum-7*newbase[j]);
+                newcase := Sort([-newbase[j]*s] cat [(newbase[k]-newbase[j])*s : k in [1..6] | k ne j]);
+                if newcase lt basecase then continue i5; end if;
+                if newcase eq basecase then auts:= true; end if;
+              end if;
+            end for;
+
+            for i in [1..6] do
+              // send ai to oo and oo to 0... x --> 1/(x-ai)
+              newbase := [-1/basecase[i]] cat [1/(basecase[j]-basecase[i]) : j in [1..6] | j ne i];
+              
+              sum := &+newbase;
+              if sum ne 0 then
+                s := 1/sum;
+                newcase := Sort([a*s : a in newbase]);
+                if newcase lt basecase then continue i5; end if;
+                if newcase eq basecase then auts:= true; end if;
+              end if;
+              
+              for j in [1..6] do
+                if sum ne 7*newbase[j] then
+                  s := 1/(sum-7*newbase[j]);
+                  newcase := Sort([-newbase[j]*s] cat [(newbase[k]-newbase[j])*s : k in [1..6] | k ne j]);
+                  if newcase lt basecase then continue i5; end if;
+                  if newcase eq basecase then auts:= true; end if;
+                end if;
+              end for;
+            end for;
+              
+            // We got one!
+              
+            f := x*(x-a1)*(x-a2)*(x-a3)*(x-a4)*(x-a5)*(x-a6);
+            if auts then
+              autgroup := automorphisms11111111(f);
+            else
+              autgroup := [I];
+            end if;
+            polys11111111 cat:= [<f,#autgroup,autgroup>];
+              
+          end for;
+        end for;
+      end for;
+    end for;
+  end for;
+  
+  if 0 eq q mod 7 then
+    f := x^7 - x;
+    autgroup := automorphisms11111111(f);
+    polys11111111 cat:= [<f, #autgroup, autgroup>];
+  end if;
+  
+  assert &+[1/z[2] : z in polys11111111] eq (q-2)*(q-3)*(q-4)*(q-5)*(q-6) / 40320;
+  
+  return polys11111111;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints2111111(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 2 in the degree-2 extension of K and 6 in P^1(K).
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // (q^2 - q)/2 * (q+1)*q*(q-1)*(q-2)*(q-3)*(q-4)/720
+  // = (q+1)*q^2*(q-1)^2*(q-2)*(q-3)*(q-4)/ 1440
+  
+  // weighted sum = q * (q-1) * (q-2) * (q-3) * (q-4)/ 1440
+  
+  q := #K;
+  if q lt 5 then return []; end if;
+  R<x>:=PolynomialRing(K);
+  ns := nonsquare(K);
+  I := Matrix(2,[K|1,0,0,1]);
+
+    
+  squares := [a : a in {b^2 : b in K} | a ne 0];
+  
+  quads := [(x+a)^2 - ns*b : a in K, b in squares];
+  sixones := sixpoints111111(K);
+
+
+
+  polys2111111 := [];
+  for f111111 in sixones do
+    if f111111[2] eq 1 then
+      polys2111111 cat:= [<f111111[1]*f2, 1, [I]> : f2 in quads];
+    else
+      auts := f111111[3];
+      for f2 in quads do
+        bigauts := [];
+        for A in auts do
+          g2 := Numerator(Evaluate(f2,(A[1,1]*x + A[1,2])/(A[2,1]*x + A[2,2]))*(A[2,1]*x + A[2,2])^2);
+          g2 := g2/Coefficient(g2,2);
+          if f2 gt g2 then continue f2; end if;
+          if f2 eq g2 then bigauts cat:=[A]; end if;
+        end for;
+        polys2111111 cat:= [<f111111[1]*f2, #bigauts, bigauts>];
+      end for;
+    end if;
+  end for;
+
+  assert &+[1/m[2] : m in polys2111111]  eq q * (q-1) * (q-2) * (q-3) * (q-4)/ 1440;
+  
+  return polys2111111;
+end function;
+
+//------------------------------------------------------------------------------
+  
+function eightpoints221111(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 4 in the quadratic extension of K and 4 in P^1(K)
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // (q+1)*q*(q-1)*(q-2)/8 * (q+1)*q*(q-1)*(q-2)/24
+  // = (q+1)^2*q^2*(q-1)^2*(q-2)^2/192
+  
+  // weighted sum = q * (q+1) * (q-1) * (q-2)^2 / 192
+
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+
+  quadpairs := fourpoints22(K);
+
+  groups22 := {m[3] : m in quadpairs};
+  groups22 := [G : G in groups22];
+
+  Klist := [a : a in K];
+  linear4s := [];
+  for i in [1..q-2] do
+    for j in [i+1..q-1] do
+      for k in [j+1..q] do
+        linear4s cat:= [(x-Klist[i])*(x-Klist[j])*(x-Klist[k])];
+      end for;
+    end for;
+  end for;
+  for i in [1..q-3] do
+    for j in [i+1..q-2] do
+      for k in [j+1..q-1] do
+        for l in [k+1..q] do
+          linear4s cat:= [(x-Klist[i])*(x-Klist[j])*(x-Klist[k])*(x-Klist[l])];
+        end for;
+      end for;
+    end for;
+  end for;
+  
+  polys221111 := [];
+  
+  for G in groups22 do
+    quadpairsG := [f22 : f22 in quadpairs | f22[3] eq G];
+    goodlins := [];
+    for f in linear4s do
+      linearauts := [];
+      for inv in G do
+        num := inv[1,1]*x + inv[1,2];
+        den := inv[2,1]*x + inv[2,2];
+        g := Numerator(Evaluate(f,num/den)*den^4);
+        g := g/Coefficient(g,Degree(g));
+        if g lt f then continue f; end if;
+        if g eq f then 
+          linearauts cat:= [inv];
+        end if;
+      end for;
+      goodlins cat:= [<f, linearauts>];
+    end for;
+    polys221111 cat:= [<f22[1] * f1111[1], #f1111[2], f1111[2]> : f22 in quadpairsG, f1111 in goodlins];
+  end for;
+  
+  assert &+[1/m[2] : m in polys221111] eq q * (q+1) * (q-1) * (q-2)^2 / 192;
+  
+  return polys221111;
+end function;
+
+//------------------------------------------------------------------------------
+
+
+function eightpoints22211(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 6 in the degree-6 extension of K and 2 in K.
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // q * (q+1) * (q-1) * (q-2) * (q^2 - q - 4)/48   *  (q+1)*q/2
+  // = q^2 * (q+1)^2 * (q-1) * (q-2) * (q^2 - q - 4)/96
+  // weighted sum = q * (q+1) * (q-2) * (q^2 - q - 4)/96
+
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  
+  polys22211:=[];
+  
+  sextics := sixpoints222(K);
+  
+  quads := [(x-a)*(x-b) : a, b in K | a lt b] cat [(x-a) : a in K];
+
+  I := Matrix(2,[K!1,0,0,1]);
+
+  for m in sextics do
+    f := m[1];
+    n := m[2];
+    G := m[3];
+    
+    if n eq 1 then
+      polys22211 cat:= [<f*g, 1, [I]> : g in quads];
+    else
+      for g in quads do
+        quadorbit := [];
+        GG := [];
+        for M in G do 
+          gg := Numerator(Evaluate(g,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^2);
+          gg := gg/Coefficient(gg,Degree(gg));
+          if g eq gg then
+            GG cat:= [M];
+          end if;
+          quadorbit cat:= [gg];
+        end for;
+        
+        if g eq Min(quadorbit) then
+          polys22211 cat:= [<f*g, #GG, GG>];
+        end if;
+      end for;
+    end if;
+  end for;
+  
+  assert &+[1/m[2] : m in polys22211] eq q * (q+1) * (q-2) * (q^2 - q - 4)/96;
+  
+  return polys22211;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints2222(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, all 8 in the degree-2 extension of K.
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // n2 = (q^2 - q)/2 
+  // binomial(n2,4) = (q + 2) * (q + 1) * q * (q - 1) * (q - 2) * (q - 3) * (q^2-q-4)/384
+  
+  // weighted sum = (q + 2) * (q - 2) * (q - 3) * (q^2 - q - 4)/384
+
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  L := ext<K|2>;
+  
+  quadpairs := fourpoints22(K);
+  quadpairsbymu := AssociativeArray();
+  for qp in quadpairs do
+    f := qp[1];
+    q1,q2 := Explode([a[1] : a in Factorization(f)]);
+    quadpairsbymu[mu_invariant(q1,q2)] := [q1,q2];
+  end for;
+  
+  groups22 := {m[3] : m in quadpairs};
+  groups22 := [G : G in groups22];
+
+  Klist := [a : a in K];
+  
+  ns := nonsquare(K);
+  squares := Sort([a : a in {b^2 : b in K | b ne 0}]);
+  irreds2 := [(x+a)^2 - ns*b : a in K, b in squares];
+  irredpairs := [];
+  
+  for i in [1..#irreds2-1] do
+    q1 := irreds2[i];
+    roots1 := [a[1] : a in Roots(q1,L)];
+    alpha1 := roots1[1];
+    alpha2 := roots1[2];
+    for j in [i+1..#irreds2] do
+      q2 := irreds2[j];
+      alpha3 := Roots(q2,L)[1][1];
+      M1 := Matrix(2,[alpha1*(alpha3-alpha2), alpha2*(alpha1-alpha3), (alpha3-alpha2), (alpha1-alpha3)]);
+      M1inv := M1^-1;
+      mu := mu_invariant(q1,q2);
+      qq1, qq2 := Explode(quadpairsbymu[mu]);      
+      rootsqq1 := [a[1] : a in Roots(qq1,L)];
+      rootsqq2 := [a[1] : a in Roots(qq2,L)];
+      for beta1, beta3 in rootsqq1 cat rootsqq2 do
+        beta2 := beta1^q;
+        if #{beta1,beta2,beta3} eq 3 then
+          M2 := Matrix(2,[beta1*(beta3-beta2), beta2*(beta1-beta3), (beta3-beta2), (beta1-beta3)]);
+          M3 := PGLreduce(M2*M1inv);
+          if &and[z in K : z in Eltseq(M3)] then
+            irredpairs cat:= [[q1,q2]];
+            break beta1;
+          end if;
+        end if;
+      end for;
+    end for;
+  end for;
+        
+  // so now irredpairs contains all pairs of irreducible quadratics and
+  // and a pointer to the coresponding normalized pair in quadpairs.
+  
+  polys2222 := [];
+  hardnuts := [];
+  
+  for G in groups22 do
+    quadpairsG := [f22 : f22 in quadpairs | f22[3] eq G];
+    goodpairs := [];
+    for f in irredpairs do
+      for inv in G do
+        num := inv[1,1]*x + inv[1,2];
+        den := inv[2,1]*x + inv[2,2];
+        g := Numerator(Evaluate(f[1]*f[2],num/den)*den^4);
+        g := g/Coefficient(g,4);
+        if g lt f[1]*f[2] then continue f; end if;
+      end for;
+      goodpairs cat:= [f];
+    end for;
+    for f1 in quadpairsG do
+      q1,q2 := Explode([a[1] : a in Factorization(f1[1])]);
+      s12 := mu_invariant(q1,q2);
+      for f2 in goodpairs do
+        q3,q4 := Explode(f2);
+        if #{q1,q2,q3,q4} eq 4 then
+          s13 := mu_invariant(q1,q3);
+          s14 := mu_invariant(q1,q4);
+          s23 := mu_invariant(q2,q3);
+          s24 := mu_invariant(q2,q4);
+          s34 := mu_invariant(q3,q4);
+          qscores := [s12,s13,s14,s23,s24,s34];
+          deg8 := q1*q2*q3*q4;
+          unique := [u : u in qscores | #[v : v in qscores | v eq u] eq 1];
+          if #unique gt 0 then
+            if s12 eq Min(unique) then
+              autos := automorphisms2222(deg8);
+              polys2222 cat:= [<deg8, #autos, autos>];
+            end if;
+          else
+            hardnuts cat:= [deg8];
+          end if;
+        end if;
+      end for;
+    end for;
+  end for;
+  
+  sortednuts := {};
+        
+  for n in hardnuts do
+    complist := [];
+    q1, q2, q3, q4 := Explode([a[1] : a in Factorization(n)]);
+    qlist := [q1,q2,q3,q4];
+    for i,j in [1..4] do
+      if i lt j then
+        alpha1 := Roots(qlist[i],L)[1][1];
+        alpha2 := Roots(qlist[i],L)[2][1];
+        alpha3 := Roots(qlist[j],L)[1][1];
+        M1 := Matrix(2,[alpha1*(alpha3-alpha2), alpha2*(alpha1-alpha3), (alpha3-alpha2), (alpha1-alpha3)]);
+        mu := mu_invariant(qlist[i],qlist[j]);
+
+        r1,r2 := Explode(quadpairsbymu[mu]);
+        quadsbyj := [[r1,r2],[r2,r1]];
+        for rr in quadsbyj do
+          for k in [1..2] do
+            beta1 := Roots(rr[1],L)[k][1];
+            beta2 := Roots(rr[1],L)[3-k][1];
+            for l in [1..2] do
+              beta3 := Roots(rr[2],L)[l][1];
+              M2 := Matrix(2,[beta1*(beta3-beta2), beta2*(beta1-beta3), (beta3-beta2), (beta1-beta3)]);
+              M3 := PGLreduce(M1*M2^-1);
+              if &and[z in K : z in Eltseq(M3)] then
+                M3 := Matrix(2,[K!z : z in Eltseq(M3)]);
+                g := Numerator(Evaluate(n,(M3[1,1]*x + M3[1,2])/(M3[2,1]*x + M3[2,2]))*(M3[2,1]*x + M3[2,2])^8);
+                g := g/Coefficient(g,8);
+                assert Denominator(g/rr[1]/rr[2]) eq 1;
+                complist cat:= [g];
+              end if;
+            end for;
+          end for;
+        end for;
+      end if;
+    end for;
+    sortednuts join:= {Sort(complist)[1]};
+  end for;
+        
+  for n in sortednuts do
+    autos := automorphisms2222(n);
+    polys2222 cat:= [<n, #autos, autos>];
+  end for;
+
+  count := 0;
+  if #polys2222 gt 0 then count := &+[1/m[2] : m in polys2222]; end if;
+  assert count eq (q + 2) * (q - 2) * (q - 3) * (q^2 - q - 4)/384;
+
+  return polys2222;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints311111(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 3 in the degree-3 extension of K and 5 in P^1(K).
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // (q^3 - q)/3 * (q+1)*q*(q-1)*(q-2)*(q-3)/120
+  // = q^2 * (q+1)^2 * (q-1)^2 * (q-2) * (q-3) / 360
+  
+  // weighted sum = q * (q+1) * (q-1) * (q-2) * (q-3) / 360
+
+  q := #K;
+  if q lt 4 then return []; end if;
+  R<x>:=PolynomialRing(K);
+  ns := nonsquare(K);
+  I := Matrix(2,[K|1,0,0,1]);
+  
+  cubics := [x^3 + a*x^2 + b*x + c : a,b,c in K | IsIrreducible(x^3 + a*x^2 + b*x + c)];
+  fiveones := fivepoints11111(K);
+
+
+  polys311111 := [];
+  for f11111 in fiveones do
+    if f11111[2] eq 1 then
+      polys311111 cat:= [<f11111[1]*f3, 1, [I]> : f3 in cubics];
+    else
+      auts := f11111[3];
+      for f3 in cubics do
+        bigauts := [];
+        for A in auts do
+          g3 := Numerator(Evaluate(f3,(A[1,1]*x + A[1,2])/(A[2,1]*x + A[2,2]))*(A[2,1]*x + A[2,2])^3);
+          g3 := g3/Coefficient(g3,3);
+          if f3 gt g3 then continue f3; end if;
+          if f3 eq g3 then bigauts cat:=[A]; end if;
+        end for;
+        polys311111 cat:= [<f11111[1]*f3, #bigauts, bigauts>];
+      end for;
+    end if;
+  end for;
+
+  assert &+[1/m[2] : m in polys311111] eq q * (q+1) * (q-1) * (q-2) * (q-3) / 360;
+  
+  return polys311111;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints32111(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 6 in the degree-6 extension of K and 2 in the 
+  // quadratic extension of K.
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // (q^3-q)/3 * (q^2 - q)/2 * (q+1)*q*(q-1)6
+  // = q^3 * (q-1)^3 * (q+1)^2 / 36
+  // weighted sum = q^2 * (q-1)^2 * (q+1) / 36
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  
+  polys32111:=[];
+  
+  sextics := sixpoints3111(K);
+  
+  ns := nonsquare(K);
+  squares := [a : a in {b^2 : b in K} | a ne 0];
+  
+  quads := [(x+a)^2 - ns*b : a in K, b in squares];
+  I := Matrix(2,[K!1,0,0,1]);
+
+  for m in sextics do
+    f := m[1];
+    n := m[2];
+    G := m[3];
+    
+    if n eq 1 then
+      polys32111 cat:= [<f*g, 1, [I]> : g in quads];
+    else
+      for g in quads do
+        quadorbit := [];
+        GG := [];
+        for M in G do 
+          gg := Numerator(Evaluate(g,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^2);
+          gg := gg/Coefficient(gg,2);
+          if g eq gg then
+            GG cat:= [M];
+          end if;
+          quadorbit cat:= [gg];
+        end for;
+        
+        if g eq Min(quadorbit) then
+          polys32111 cat:= [<f*g, #GG, GG>];
+        end if;
+      end for;
+    end if;
+  end for;
+  
+  assert &+[1/m[2] : m in polys32111] eq q^2 * (q-1)^2 * (q+1) / 36;
+  
+  return polys32111;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints3221(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 3 in the degree-3 extension of K, 4 in the 
+  // quadratic extension of K, and 1 in P^1(K).
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // (q^3 - q)/3 * (q+1)*q*(q-1)*(q-2)/8 * (q+1)
+  // = q^2 * (q+1)^3 * (q-1)^2 * (q-2) / 24
+  
+  // weighted sum = q * (q+1)^2 * (q-1) * (q-2) / 24
+
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  ns := nonsquare(K);
+  threeone := fourpoints31(K);
+  I := Matrix(2,[K|1,0,0,1]);
+  
+  squares := Sort([a : a in {a^2 : a in K | a ne 0}]);
+  quads := [(x+a)^2 - ns*b : a in K, b in squares];
+  quadpairs := [quads[i]*quads[j] : i,j in [1..#quads] | i lt j];
+  
+  polys3221 := [];
+  for f31 in threeone do
+    if f31[2] eq 1 then
+      polys3221 cat:= [<f31[1]*f22, 1, [I]> : f22 in quadpairs];
+    else
+      aut := f31[3][1];
+      if aut eq I then aut := f31[3][2]; end if;
+      aut2 := aut^2;
+      for f22 in quadpairs do
+        g22 := Numerator(Evaluate(f22,(aut[1,1]*x + aut[1,2])/(aut[2,1]*x + aut[2,2]))*(aut[2,1]*x + aut[2,2])^4);
+        g22 := g22/Coefficient(g22,4);
+        if f22 gt g22 then continue f22; end if;
+        g22 := Numerator(Evaluate(f22,(aut2[1,1]*x + aut2[1,2])/(aut2[2,1]*x + aut2[2,2]))*(aut2[2,1]*x + aut2[2,2])^4);
+        g22 := g22/Coefficient(g22,4);
+        if f22 gt g22 then continue f22; end if;
+        polys3221 cat:= [<f31[1]*f22, 1, [I]>];
+      end for;
+    end if;
+  end for;
+
+  assert &+[1/m[2] : m in polys3221] eq q * (q+1)^2 * (q-1) * (q-2) / 24;
+  
+  return polys3221;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints3311(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 6 in the degree-6 extension of K and 2 in K.
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // q*(q-1)*(q+1)*(q^3-q-3)/18 * (q^2 + q)/2
+  // = q^2*(q-1)*(q+1)^2*(q^3-q-3)/36 
+  // weighted sum q*(q+1)*(q^3-q-3)/36 
+
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  
+  polys3311:=[];
+  
+  sextics := sixpoints33(K);
+  
+  quads := [(x-a)*(x-b) : a, b in K | a lt b] cat [(x-a) : a in K];
+
+  I := Matrix(2,[K!1,0,0,1]);
+
+  for m in sextics do
+    f := m[1];
+    n := m[2];
+    G := m[3];
+    
+    if n eq 1 then
+      polys3311 cat:= [<f*g, 1, [I]> : g in quads];
+    else
+      for g in quads do
+        quadorbit := [];
+        GG := [];
+        for M in G do 
+          gg := Numerator(Evaluate(g,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^2);
+          gg := gg/Coefficient(gg,Degree(gg));
+          if g eq gg then
+            GG cat:= [M];
+          end if;
+          quadorbit cat:= [gg];
+        end for;
+        
+        if g eq Min(quadorbit) then
+          polys3311 cat:= [<f*g, #GG, GG>];
+        end if;
+      end for;
+    end if;
+  end for;
+  
+  assert &+[1/m[2] : m in polys3311] eq q*(q+1)*(q^3-q-3)/36 ;
+  
+  return polys3311;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints332(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 6 in the degree-6 extension of K and 2 in the 
+  // quadratic extension of K.
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // q*(q-1)*(q+1)*(q^3-q-3)/18 * (q^2 - q)/2
+  // = q^2*(q-1)^2*(q+1)*(q^3-q-3)/36 
+  // weighted sum q*(q-1)*(q^3-q-3)/36 
+
+
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  
+  polys332:=[];
+  
+  sextics := sixpoints33(K);
+  
+  ns := nonsquare(K);
+  squares := [a : a in {b^2 : b in K} | a ne 0];
+  
+  quads := [(x+a)^2 - ns*b : a in K, b in squares];
+  I := Matrix(2,[K!1,0,0,1]);
+
+  for m in sextics do
+    f := m[1];
+    n := m[2];
+    G := m[3];
+    
+    if n eq 1 then
+      polys332 cat:= [<f*g, 1, [I]> : g in quads];
+    else
+      for g in quads do
+        quadorbit := [];
+        GG := [];
+        for M in G do 
+          gg := Numerator(Evaluate(g,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^2);
+          gg := gg/Coefficient(gg,2);
+          if g eq gg then
+            GG cat:= [M];
+          end if;
+          quadorbit cat:= [gg];
+        end for;
+        
+        if g eq Min(quadorbit) then
+          polys332 cat:= [<f*g, #GG, GG>];
+        end if;
+      end for;
+    end if;
+  end for;
+  
+  assert &+[1/m[2] : m in polys332] eq  q*(q-1)*(q^3-q-3)/36 ;
+  
+  return polys332;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints41111(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 4 in the degree-4 extension of K and 4 in P^1(K)
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // (q^4 - q^2)/4 * (q+1)*q*(q-1)*(q-2)/24
+  // = q^3 * (q+1)^2*(q-1)^2*(q-2)/96
+  
+  // weighted sum = q^2 * (q+1) * (q-1) * (q-2) / 48
+
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  ns := nonsquare(K);
+  quartics := fourpoints4(K : ns := ns);
+  I := Matrix(2,[K|1,0,0,1]);
+  inv1 := Matrix(2,[K|0,1,1,0]);
+  inv2 := Matrix(2,[0,ns,1,0]);
+  
+  quartics1 := [a : a in quartics | a[2] eq 2 and inv1 in a[3]];
+  quartics2 := [a : a in quartics | a[2] eq 2 and inv2 in a[3]];
+  special := [a : a in quartics | a[2] eq 4];
+  assert #quartics eq #quartics1 + #quartics2 + #special;
+  
+  aut := special[1][3][2];  
+
+  Klist := [a : a in K];
+  linear4s := [];
+  for i in [1..q-2] do
+    for j in [i+1..q-1] do
+      for k in [j+1..q] do
+        linear4s cat:= [(x-Klist[i])*(x-Klist[j])*(x-Klist[k])];
+      end for;
+    end for;
+  end for;
+  for i in [1..q-3] do
+    for j in [i+1..q-2] do
+      for k in [j+1..q-1] do
+        for l in [k+1..q] do
+          linear4s cat:= [(x-Klist[i])*(x-Klist[j])*(x-Klist[k])*(x-Klist[l])];
+        end for;
+      end for;
+    end for;
+  end for;
+  
+  smooth1 := [];
+  num := inv1[1,1]*x + inv1[1,2];
+  den := inv1[2,1]*x + inv1[2,2];
+  
+  for f4 in linear4s do
+    g := Numerator(Evaluate(f4,num/den)*den^4);
+    g := g/Coefficient(g,Degree(g));
+    if f4 lt g then smooth1 cat:= [<f4, 1, [I]>]; end if;
+    if f4 eq g then smooth1 cat:= [<f4, 2, [I,inv1]>]; end if;
+  end for;
+
+  smooth2 := [];
+  num := inv2[1,1]*x + inv2[1,2];
+  den := inv2[2,1]*x + inv2[2,2];
+  
+  for f4 in linear4s do
+    g := Numerator(Evaluate(f4,num/den)*den^4);
+    g := g/Coefficient(g,Degree(g));
+    if f4 lt g then smooth2 cat:= [<f4, 1, [I]>]; end if;
+    if f4 eq g then smooth2 cat:= [<f4, 2, [I,inv2]>]; end if;
+  end for;
+
+  smoothspecial := [];
+  num := aut[1,1]*x + aut[1,2];
+  den := aut[2,1]*x + aut[2,2];
+  for f4 in linear4s do
+    quats := [I];
+    g := Numerator(Evaluate(f4,num/den)*den^4);
+    g := g/Coefficient(g,Degree(g));
+    if f4 gt g then continue; end if;
+    if f4 eq g then quats cat:= [aut]; end if;
+    g := Numerator(Evaluate(g,num/den)*den^4);
+    g := g/Coefficient(g,Degree(g));
+    if f4 gt g then continue; end if;
+    if f4 eq g then quats cat:= [aut^2]; end if;
+    g := Numerator(Evaluate(g,num/den)*den^4);
+    g := g/Coefficient(g,Degree(g));
+    if f4 gt g then continue; end if;
+    if f4 eq g then quats cat:= [aut^3]; end if;
+    smoothspecial cat:= [<f4, #quats, quats>];
+  end for;
+  
+  polys41111 := [<f[1]*g[1],g[2],g[3]> : f in quartics1, g in smooth1]
+              cat [<f[1]*g[1],g[2],g[3]> : f in quartics2, g in smooth2]
+              cat [<f[1]*g[1],g[2],g[3]> : f in special, g in smoothspecial];
+  
+  assert &+[1/m[2] : m in polys41111] eq q^2 * (q+1) * (q-1) * (q-2) / 96;
+  
+  return polys41111;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints4211(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 6 in the degree-6 extension of K and 2 in K.
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // (q^4-q^2)/4 * (q^2-q)/2 * (q^2 + q)/2 
+  // = q^4 * (q+1)^2 * (q-1)^2 / 16
+  
+  // weighted sum q^3 * (q+1) * (q-1) / 16
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  
+  polys4211:=[];
+  
+  sextics := sixpoints42(K);
+  
+  quads := [(x-a)*(x-b) : a, b in K | a lt b] cat [(x-a) : a in K];
+
+  I := Matrix(2,[K!1,0,0,1]);
+
+  for m in sextics do
+    f := m[1];
+    n := m[2];
+    G := m[3];
+    
+    if n eq 1 then
+      polys4211 cat:= [<f*g, 1, [I]> : g in quads];
+    else
+      for g in quads do
+        quadorbit := [];
+        GG := [];
+        for M in G do 
+          gg := Numerator(Evaluate(g,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^2);
+          gg := gg/Coefficient(gg,Degree(gg));
+          if g eq gg then
+            GG cat:= [M];
+          end if;
+          quadorbit cat:= [gg];
+        end for;
+        
+        if g eq Min(quadorbit) then
+          polys4211 cat:= [<f*g, #GG, GG>];
+        end if;
+      end for;
+    end if;
+  end for;
+  
+  assert &+[1/m[2] : m in polys4211] eq q^3*(q+1)*(q-1)/16;
+  
+  return polys4211;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints422(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 4 in the degree-4 extension of K and 4 in the 
+  // quadratic extension of K.
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // (q^4 - q^2)/4 * (q+1)*q*(q-1)*(q-2)/8
+  // = q^3 * (q+1)^2*(q-1)^2*(q-2)/32
+  
+  // weighted sum = q^2 * (q+1) * (q-1) * (q-2) / 32
+
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  ns := nonsquare(K);
+  quartics := fourpoints4(K : ns := ns);
+  I := Matrix(2,[K|1,0,0,1]);
+  inv1 := Matrix(2,[K|0,1,1,0]);
+  inv2 := Matrix(2,[0,ns,1,0]);
+  
+  quartics1 := [a : a in quartics | a[2] eq 2 and inv1 in a[3]];
+  quartics2 := [a : a in quartics | a[2] eq 2 and inv2 in a[3]];
+  special := [a : a in quartics | a[2] eq 4];
+  assert #quartics eq #quartics1 + #quartics2 + #special;
+  
+  specialauts := special[1][3];  
+  // A group of order 4. We want a generator.
+  i := 0;
+  repeat 
+    i+:=1; 
+    aut := specialauts[i];
+  until PGLreduce(aut*aut) ne I;
+
+
+  squares := Sort([a : a in {a^2 : a in K | a ne 0}]);
+  
+  quads := [(x+a)^2 - ns*b : a in K, b in squares];
+  quadpairs := [quads[i]*quads[j] : i,j in [1..#quads] | i lt j];
+  
+  
+  quadpairs1 := [];
+  num := inv1[1,1]*x + inv1[1,2];
+  den := inv1[2,1]*x + inv1[2,2];
+  
+  for f4 in quadpairs do
+    g := Numerator(Evaluate(f4,num/den)*den^4);
+    g := g/Coefficient(g,4);
+    if f4 lt g then quadpairs1 cat:= [<f4, 1, [I]>]; end if;
+    if f4 eq g then quadpairs1 cat:= [<f4, 2, [I,inv1]>]; end if;
+  end for;
+
+  quadpairs2 := [];
+  num := inv2[1,1]*x + inv2[1,2];
+  den := inv2[2,1]*x + inv2[2,2];
+  
+  for f4 in quadpairs do
+    g := Numerator(Evaluate(f4,num/den)*den^4);
+    g := g/Coefficient(g,4);
+    if f4 lt g then quadpairs2 cat:= [<f4, 1, [I]>]; end if;
+    if f4 eq g then quadpairs2 cat:= [<f4, 2, [I,inv2]>]; end if;
+  end for;
+
+  quadpairsspecial := [];
+  num := aut[1,1]*x + aut[1,2];
+  den := aut[2,1]*x + aut[2,2];
+  for f4 in quadpairs do
+    quats := [I];
+    g := Numerator(Evaluate(f4,num/den)*den^4);
+    g := g/Coefficient(g,4);
+    if f4 gt g then continue; end if;
+    if f4 eq g then quats cat:= [aut]; end if;
+    g := Numerator(Evaluate(g,num/den)*den^4);
+    g := g/Coefficient(g,4);
+    if f4 gt g then continue; end if;
+    if f4 eq g then quats cat:= [aut^2]; end if;
+    g := Numerator(Evaluate(g,num/den)*den^4);
+    g := g/Coefficient(g,4);
+    if f4 gt g then continue; end if;
+    if f4 eq g then quats cat:= [aut^3]; end if;
+    quadpairsspecial cat:= [<f4, #quats, quats>];
+  end for;
+  
+  polys422 := [<f[1]*g[1],g[2],g[3]> : f in quartics1, g in quadpairs1]
+              cat [<f[1]*g[1],g[2],g[3]> : f in quartics2, g in quadpairs2]
+              cat [<f[1]*g[1],g[2],g[3]> : f in special, g in quadpairsspecial];
+  
+  assert &+[1/m[2] : m in polys422] eq q^2 * (q+1) * (q-1) * (q-2) / 32;
+  
+  return polys422;
+end function;
+
+//------------------------------------------------------------------------------
+
+
+function eightpoints431(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 4 in the degree-4 extension of K, 3 in the 
+  // cubic extension of K, and 1 in K.
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // (q^4 - q^2)/4 * (q^3 - q)/3 * (q+1) = q^3 * (q+1)^3 * (q-1)^2 / 12
+  // weighted sum = q^2 * (q+1)^2 * (q-1) / 12
+
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  
+  ns := nonsquare(K);
+
+  quartics := fourpoints4(K : ns := ns);
+  I := Matrix(2,[K|1,0,0,1]);
+  inv1 := Matrix(2,[K|0,1,1,0]);
+  inv2 := Matrix(2,[0,ns,1,0]);
+  
+  quartics1 := [a : a in quartics | a[2] eq 2 and inv1 in a[3]];
+  quartics2 := [a : a in quartics | a[2] eq 2 and inv2 in a[3]];
+  special := [a : a in quartics | a[2] eq 4];
+  
+  assert #quartics eq #quartics1 + #quartics2 + #special;
+  
+  cubic := irreducible3(K);
+
+  pgl2 := [Matrix(2,[a,b,0,1]) : a, b in K | a ne 0];
+  pgl2 cat:= [Matrix(2,[a,b,1,d]) : a,b,d in K | b ne a*d];
+  
+  aut := Matrix(2,[K|0, -1, 1, -1]);
+  
+  cubics1 := [];
+  for M in pgl2 do
+    if M eq Min([PGLreduce(aut^i * M * inv1^j) : i in [0..2], j in [0..1]]) then
+      f := Numerator(Evaluate(cubic, (M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^3);
+      f := f/Coefficient(f,3);
+      cubics1 cat:= [f];
+    end if;
+  end for;
+  
+  cubics2 := [];
+  for M in pgl2 do
+    if M eq Min([PGLreduce(aut^i * M * inv2^j) : i in [0..2], j in [0..1]]) then
+      f := Numerator(Evaluate(cubic, (M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^3);
+      f := f/Coefficient(f,3);
+      cubics2 cat:= [f];
+    end if;
+  end for;
+  
+  order4 := special[1][3][2];
+  
+  cubicsspecial := [];
+  for M in pgl2 do
+    if M eq Min([PGLreduce(aut^i * M * order4^j) : i in [0..2], j in [0..3]]) then
+      f := Numerator(Evaluate(cubic, (M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^3);
+      f := f/Coefficient(f,3);
+      cubicsspecial cat:= [f];
+    end if;
+  end for;
+  
+  
+  linears := [K!1] cat [x-a : a in K];
+  
+  polys431 := [<f4[1]*f3*f1, 1, [I]> : f4 in quartics1, f3 in cubics1, f1 in linears]
+              cat [<f4[1]*f3*f1, 1, [I]> : f4 in quartics2, f3 in cubics2, f1 in linears]
+              cat [<f4[1]*f3*f1, 1, [I]> : f4 in special, f3 in cubicsspecial, f1 in linears];
+  
+  assert &+[1/m[2] : m in polys431] eq q^2 * (q+1)^2 * (q-1)/12;
+  
+  return polys431;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints44(K)
+  // (q^4 - q^2)/4 quartics
+  // q^2*(q^2-1)*(q^4 - q^2 - 4)/32 unordered pairs of distinct quartics
+  // q*(q^4 - q^2 - 4)/32 weighted sum
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  polys44 := [];
+  ns := nonsquare(K);
+  Kstar := [a : a in K | a ne 0];
+  quartics := fourpoints4(K : ns := ns);
+  I := Matrix(2,[K|1,0,0,1]);
+  inv1 := Matrix(2,[K|0,1,1,0]);
+  inv2 := Matrix(2,[0,ns,1,0]);
+  
+  quartics1 := [a : a in quartics | a[2] eq 2 and inv1 in a[3]];
+  quartics2 := [a : a in quartics | a[2] eq 2 and inv2 in a[3]];
+  special := [a : a in quartics | a[2] eq 4];
+  
+  assert #quartics eq #quartics1 + #quartics2 + #special;
+  
+
+  pgl2 := [Matrix(2,[a,b,0,1]) : a in Kstar, b in K];
+  pgl2 cat:= [Matrix(2,[a,b,1,d]) : a,b,d in K | b ne a*d];
+  
+  // Pairing distinct quartics of type 1:
+  
+  Mlist11 := [];
+  for M in pgl2 do
+    M2 := PGLreduce(inv1*M);
+    if M2 lt M then continue M; end if;
+    M2 := PGLreduce(M2*inv1);
+    if M2 lt M then continue M; end if;
+    M2 := PGLreduce(inv1*M2);
+    if M2 lt M then continue; end if;
+    Mlist11 cat:= [M];
+  end for;
+
+
+
+  for i in [1..#quartics1-1] do
+    q1 := quartics1[i][1];
+    for j in [i+1..#quartics1] do
+      q2 := quartics1[j][1];
+
+      for M in Mlist11 do
+        newinv := PGLreduce(M^-1*inv1*M);
+        newq := Numerator(Evaluate(q2,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^4);
+        newq := newq/Coefficient(newq,4);
+        
+        if inv1 eq newinv then
+          polys44 cat:= [<q1*newq,2,[I,inv1]>];
+        else
+          polys44 cat:= [<q1*newq,1,[I]>];
+        end if;
+      end for;
+    end for;
+  end for;
+  
+  
+      
+
+
+
+
+  
+  
+  // Pairing distinct quartics of type 2:
+  
+  Mlist22 := [];
+  for M in pgl2 do
+    M2 := PGLreduce(inv2*M);
+    if M2 lt M then continue M; end if;
+    M2 := PGLreduce(M2*inv2);
+    if M2 lt M then continue M; end if;
+    M2 := PGLreduce(inv2*M2);
+    if M2 lt M then continue; end if;
+    Mlist22 cat:= [M];
+  end for;
+  
+  for i in [1..#quartics2-1] do
+    q1 := quartics2[i][1];
+    for j in [i+1..#quartics2] do
+      q2 := quartics2[j][1];
+
+      for M in Mlist22 do
+        newinv := PGLreduce(M^-1*inv2*M);
+        newq := Numerator(Evaluate(q2,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^4);
+        newq := newq/Coefficient(newq,4);
+        
+        if inv2 eq newinv then
+          polys44 cat:= [<q1*newq,2,[I,inv2]>];
+        else
+          polys44 cat:= [<q1*newq,1,[I]>];
+        end if;
+      end for;
+    end for;
+  end for;
+  
+  
+
+
+
+
+  // Pairing type 1 with type 2:
+  
+  Mlist12 := [];
+  for M in pgl2 do
+    M2 := PGLreduce(inv2*M);
+    if M2 lt M then continue M; end if;
+    M2 := PGLreduce(M2*inv1);
+    if M2 lt M then continue M; end if;
+    M2 := PGLreduce(inv2*M2);
+    if M2 lt M then continue; end if;
+    Mlist12 cat:= [M];
+  end for;
+  
+  for i in [1..#quartics1] do
+    q1 := quartics1[i][1];
+    for j in [1..#quartics2] do
+      q2 := quartics2[j][1];
+
+      for M in Mlist12 do
+        newinv := PGLreduce(M^-1*inv2*M);
+        newq := Numerator(Evaluate(q2,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^4);
+        newq := newq/Coefficient(newq,4);
+        
+        if inv1 eq newinv then
+          polys44 cat:= [<q1*newq,2,[I,inv2]>];
+        else
+          polys44 cat:= [<q1*newq,1,[I]>];
+        end if;
+      end for;
+    end for;
+  end for;
+
+
+  // Pairing a type 1 with itself
+  
+  Mlistsame1 := [];
+  for M in pgl2 do
+    if M ne I and M ne inv1 then
+      M2 := PGLreduce(inv1*M);
+      if M2 lt M then continue M; end if;
+
+      M2 := PGLreduce(M2*inv1);
+      if M2 lt M then continue M; end if;
+
+      M2 := PGLreduce(inv1*M2);
+      if M2 lt M then continue; end if;
+
+      M2 := PGLreduce(M2^-1);
+      if M2 lt M then continue M; end if;
+
+      M2 := PGLreduce(inv1*M2);
+      if M2 lt M then continue M; end if;
+
+      M2 := PGLreduce(M2*inv1);
+      if M2 lt M then continue M; end if;
+
+      M2 := PGLreduce(inv1*M2);
+      if M2 lt M then continue; end if;
+
+      Mlistsame1 cat:= [M];
+    end if;
+  end for;
+  
+  
+  // We will have q2(x) = q1(M(x)). Here we must avoid M = 1 and M = inv1.
+  // Automorpshisms?
+  // Aut(q1) intersect M^-1*Aut(q1)*M  gives the ones fixing each term.
+  // For these curves that means inv1 if inv1 = M^-1 inv1 M.
+  // Are there any that swap factors? 
+  // The elements of PGL2 that take q1 to q2 are: 
+  //  A = M                q1(A(x)) = q1(M(x)) = q2(x)
+  //  A = inv1*M           q1(inv1(M(x)) = q1(M(x)) = q2(x)
+  //  A = M*inv2 = inv1*M  q1((M*inv2)(x)) = q1(M*M^-1*inv1*M(x)) = q1(inv1(M(x))) = q1(M(x)) = q2(x)
+  //  A = inv1*M*inv2 = M
+  // So really only two choices, M and inv1*M.
+  // And to give an automorphism of q1*q2 we would need q2(A(x)) = q1(x) so q1((M*A)(x)) = q1(x)
+  // M*A = 1   or   M*A = inv1
+  // For our two possibilities, this means:
+  // A = M      and (M^2 = 1 or M^2 = inv1)
+  // A = inv1*M and (M*inv1*M = 1   or   M*inv1*M = inv1) which is equiv to (A^2 = 1 or A^2 = inv)
+
+  for i in [1..#quartics1] do
+    q1 := quartics1[i][1];
+    for M in Mlistsame1 do
+      newinv := PGLreduce(M^-1*inv1*M);
+      newq := Numerator(Evaluate(q1,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^4);
+      newq := newq/Coefficient(newq,4);
+
+      autlist := [I];
+      if inv1 eq newinv then autlist cat:= [inv1]; end if;
+
+      for A in [M, inv1*M] do
+        A2 := PGLreduce(A^2);
+        if A2 eq I or A2 eq inv1 then autlist cat:= [A]; end if;
+      end for;
+      polys44 cat:= [<q1*newq,#autlist,autlist>];
+    end for;
+  end for;
+  
+      
+    
+
+
+
+
+
+
+  
+   // Pairing a type 2 with itself
+  
+  Mlistsame2 := [];
+  for M in pgl2 do
+    if M ne I and M ne inv2 then
+      M2 := PGLreduce(inv2*M);
+      if M2 lt M then continue M; end if;
+
+      M2 := PGLreduce(M2*inv2);
+      if M2 lt M then continue M; end if;
+
+      M2 := PGLreduce(inv2*M2);
+      if M2 lt M then continue; end if;
+    
+      M2 := PGLreduce(M2^-1);
+      if M2 lt M then continue M; end if;
+
+      M2 := PGLreduce(inv2*M2);
+      if M2 lt M then continue M; end if;
+
+      M2 := PGLreduce(M2*inv2);
+      if M2 lt M then continue M; end if;
+
+      M2 := PGLreduce(inv2*M2);
+      if M2 lt M then continue; end if;
+
+      Mlistsame2 cat:= [M];
+    end if;
+  end for;
+ 
+ 
+  for i in [1..#quartics2] do
+    q1 := quartics2[i][1];
+    for M in Mlistsame2 do
+      newinv := PGLreduce(M^-1*inv2*M);
+      newq := Numerator(Evaluate(q1,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^4);
+      newq := newq/Coefficient(newq,4);
+      autlist := [I];
+      if inv2 eq newinv then autlist cat:= [inv2]; end if;
+      for A in [M, inv2*M] do
+        A2 := PGLreduce(A^2);
+        if A2 eq I or A2 eq inv2 then autlist cat:= [A]; end if;
+      end for;
+      polys44 cat:= [<q1*newq,#autlist,autlist>];
+    end for;
+  end for;
+      
+              
+
+
+
+
+  // Pairing the special with a type 1:
+  
+  // First, get the automorphism of order 4.
+
+  specialauts := special[1][3];  
+  i := 0;
+  repeat 
+    i+:=1; 
+    aut := specialauts[i];
+  until PGLreduce(aut*aut) ne I;
+
+
+
+ 
+  
+  Mlistspecial1 := [];
+  for M in pgl2 do
+    Mlist := [PGLreduce(inv1^i * M * aut^j) : i in [0..1], j in [0..3]];
+    if M eq Min(Mlist) then Mlistspecial1 cat:= [M]; end if;
+  end for;
+
+  specialinv := PGLreduce(aut^2);
+
+  q1 := special[1][1];
+
+  for i in [1..#quartics1] do
+    q2 := quartics1[i][1];
+
+    for M in Mlistspecial1 do
+      newinv := PGLreduce(M^-1*inv1*M);
+      newq := Numerator(Evaluate(q2,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^4);
+      newq := newq/Coefficient(newq,4);
+        
+      if specialinv eq newinv then
+        polys44 cat:= [<q1*newq,2,[I,specialinv]>];
+      else
+        polys44 cat:= [<q1*newq,1,[I]>];
+      end if;
+    end for;
+  end for;
+  
+
+ // Pairing the special with a type 2:
+ 
+  
+  Mlistspecial2 := [];
+  for M in pgl2 do
+    Mlist := [PGLreduce(inv2^i * M * aut^j) : i in [0..1], j in [0..3]];
+    if M eq Min(Mlist) then Mlistspecial2 cat:= [M]; end if;
+  end for;
+
+  specialinv := PGLreduce(aut^2);
+
+  q1 := special[1][1];
+
+  for i in [1..#quartics2] do
+    q2 := quartics2[i][1];
+
+    for M in Mlistspecial2 do
+      newinv := PGLreduce(M^-1*inv2*M);
+      newq := Numerator(Evaluate(q2,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^4);
+      newq := newq/Coefficient(newq,4);
+        
+      if specialinv eq newinv then
+        polys44 cat:= [<q1*newq,2,[I,specialinv]>];
+      else
+        polys44 cat:= [<q1*newq,1,[I]>];
+      end if;
+    end for;
+  end for;
+  
+
+
+
+  // OK. Now pair the special with itself.
+  
+  Mlistspecialspecial := [];
+  for M in pgl2 do
+    Mlist := [PGLreduce(aut^i * M^k * aut^j) : i in [0..3], j in [0..3], k in [-1,1]];
+    if M eq Min(Mlist) then Mlistspecialspecial cat:= [M]; end if;
+  end for;
+
+
+  auts := [PGLreduce(aut^i) : i in [0..3]];
+  
+  for M in Mlistspecialspecial do
+    if not M in auts then
+      newq := Numerator(Evaluate(special[1][1],(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^4);
+      newq := newq/Coefficient(newq,4);
+
+      newauts := [PGLreduce(M^-1*A*M) : A in auts];
+    
+      // First, the automorphisms that fix both factors individually
+      bigauts := [A : A in auts | A in newauts];
+    
+      // Things that move first factor to second: A*M for A in auts.
+      // Moves second to first if M*A*M in auts.
+      bigauts cat:= [PGLreduce(A*M) : A in auts | PGLreduce(M*A*M) in auts];
+
+      polys44 cat:= [<special[1][1]*newq, #bigauts, bigauts>];
+    end if;
+  end for;
+  
+  assert &+[1/m[2] : m in polys44] eq q*(q^4 - q^2 - 4)/32;
+  return polys44;
+  
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints5111(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 5 in the degree-5 extension of K and 3 in 
+  // P^1(K).
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // Note that the number of irreducible monic quintics is (q^5 - q)/5 and the
+  // number of triple of elements of P^1(K) is (q+1)*q*(q-1)/6. Dividing the
+  // product of  these by the size of PGL(2,q) we get (q^5-q)/30.
+  // Therefore, the sum over all representatives of 1 over the 
+  // stabilizer of the representative should be (q^5-q)/30.
+  // We check this at the end.
+
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  
+  polys5111:=[];
+  
+  quintics := fivepoints5(K);
+  
+  cubic := x*(x-1);
+  
+  cubics := {Evaluate(cubic,a*x+b)/a^2 : a,b in K | a ne 0};
+  
+  
+  
+  for a,b,d in K do 
+    if b ne a*d then
+      f := Numerator(Evaluate(cubic,(a*x+b)/(x+d))*(x+d)^3);
+      f := f/Coefficient(f,Degree(f));
+      cubics join:= {f};
+    end if;
+  end for;
+  
+  cubics := Sort([a : a in cubics]);
+
+
+  I := Matrix(2,[K!1,0,0,1]);
+
+  for m in quintics do
+    f := m[1];
+    n := m[2];
+    G := m[3];
+    
+    if n eq 1 then
+      polys5111 cat:= [<f*g, 1, [I]> : g in cubics];
+    else
+      for g in cubics do
+        cubicorbit := [];
+        GG := [];
+        for M in G do 
+          gg := Numerator(Evaluate(g,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^3);
+          gg := gg/Coefficient(gg,Degree(gg));
+          if g eq gg then
+            GG cat:= [M];
+          end if;
+          cubicorbit cat:= [gg];
+        end for;
+        
+        if g eq Min(cubicorbit) then
+          polys5111 cat:= [<f*g, #GG, GG>];
+        end if;
+      end for;
+    end if;
+  end for;
+  
+  assert &+[1/m[2] : m in polys5111] eq (q^5-q)/30;
+  
+  return polys5111;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints521(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 5 in the degree-5 extension of K, 2 in the 
+  // quadratic extension of K, and 1 in K.
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // Note that the number of irreducible monic quintics is (q^5 - q)/5, the
+  // number of monic irreducible quadratics is (q^2 - q)/2, and the total
+  // number of elements of P^1(K) is q+1. Dividing the product
+  // of  these by the size of PGL(2,q) we get (q^5-q)/10.
+  // Therefore, the sum over all representatives of 1 over the 
+  // stabilizer of the representative should be (q^5-q)/10.
+  // We check this at the end.
+
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  
+  polys521:=[];
+  
+  quintics := fivepoints5(K);
+  
+  cubic := irreducible2(K);
+  
+  cubics := {Evaluate(cubic,a*x+b)/a^2 : a,b in K | a ne 0};
+  
+  
+  
+  for a,b,d in K do 
+    if b ne a*d then
+      f := Numerator(Evaluate(cubic,(a*x+b)/(x+d))*(x+d)^3);
+      f := f/Coefficient(f,Degree(f));
+      cubics join:= {f};
+    end if;
+  end for;
+  
+  cubics := Sort([a : a in cubics]);
+
+
+  I := Matrix(2,[K!1,0,0,1]);
+
+  for m in quintics do
+    f := m[1];
+    n := m[2];
+    G := m[3];
+    
+    if n eq 1 then
+      polys521 cat:= [<f*g, 1, [I]> : g in cubics];
+    else
+      for g in cubics do
+        cubicorbit := [];
+        GG := [];
+        for M in G do 
+          gg := Numerator(Evaluate(g,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^3);
+          gg := gg/Coefficient(gg,Degree(gg));
+          if g eq gg then
+            GG cat:= [M];
+          end if;
+          cubicorbit cat:= [gg];
+        end for;
+        
+        if g eq Min(cubicorbit) then
+          polys521 cat:= [<f*g, #GG, GG>];
+        end if;
+      end for;
+    end if;
+  end for;
+  
+  assert &+[1/m[2] : m in polys521] eq (q^5-q)/10;
+  
+  return polys521;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints53(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 5 in the degree-5 extension of K and 3 in the 
+  // cubic extension of K.
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // Note that the number of irreducible monic quintics is (q^5 - q)/5 and the
+  // number of monic irreducible quadratics is (q^3 - q)/3. Dividing the product
+  // of  these by the size of PGL(2,q) we get (q^5-q)/15.
+  // Therefore, the sum over all representatives of 1 over the 
+  // stabilizer of the representative should be (q^5-q)/15.
+  // We check this at the end.
+
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  
+  polys53:=[];
+  
+  quintics := fivepoints5(K);
+  
+  cubic := irreducible3(K);
+  
+  cubics := {Evaluate(cubic,a*x+b)/a^3 : a,b in K | a ne 0};
+  
+  
+  
+  for a,b,d in K do 
+    if b ne a*d then
+      f := Numerator(Evaluate(cubic,(a*x+b)/(x+d))*(x+d)^3);
+      f := f/Coefficient(f,3);
+      cubics join:= {f};
+    end if;
+  end for;
+  
+  cubics := Sort([a : a in cubics]);
+
+
+  I := Matrix(2,[K!1,0,0,1]);
+
+  for m in quintics do
+    f := m[1];
+    n := m[2];
+    G := m[3];
+    
+    if n eq 1 then
+      polys53 cat:= [<f*g, 1, [I]> : g in cubics];
+    else
+      for g in cubics do
+        cubicorbit := [];
+        GG := [];
+        for M in G do 
+          gg := Numerator(Evaluate(g,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^3);
+          gg := gg/Coefficient(gg,Degree(gg));
+          if g eq gg then
+            GG cat:= [M];
+          end if;
+          cubicorbit cat:= [gg];
+        end for;
+        
+        if g eq Min(cubicorbit) then
+          polys53 cat:= [<f*g, #GG, GG>];
+        end if;
+      end for;
+    end if;
+  end for;
+  
+  assert &+[1/m[2] : m in polys53] eq (q^5-q)/15;
+  
+  return polys53;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints611(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 6 in the degree-6 extension of K and 2 in K.
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // Note that the number of irreducible monic sextics is (q^6 - q^3 - q^2 + q)/6 and the
+  // number of pairs of distinct elements of P^1(K) is q*(q+1)/2.
+  // Dividing the product
+  // of  these by the size of PGL(2,q) we get q*(q+1)*(q^3 + q - 1)/12.
+  // Therefore, the sum over all representatives of 1 over the 
+  // stabilizer of the representative should be q*(q+1)*(q^3 + q - 1)/12.
+  // We check this at the end.
+
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  
+  polys611:=[];
+  
+  sextics := sixpoints6(K);
+  
+  quads := [(x-a)*(x-b) : a, b in K | a lt b] cat [(x-a) : a in K];
+
+  I := Matrix(2,[K!1,0,0,1]);
+
+  for m in sextics do
+    f := m[1];
+    n := m[2];
+    G := m[3];
+    
+    if n eq 1 then
+      polys611 cat:= [<f*g, 1, [I]> : g in quads];
+    else
+      for g in quads do
+        quadorbit := [];
+        GG := [];
+        for M in G do 
+          gg := Numerator(Evaluate(g,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^2);
+          gg := gg/Coefficient(gg,Degree(gg));
+          if g eq gg then
+            GG cat:= [M];
+          end if;
+          quadorbit cat:= [gg];
+        end for;
+        
+        if g eq Min(quadorbit) then
+          polys611 cat:= [<f*g, #GG, GG>];
+        end if;
+      end for;
+    end if;
+  end for;
+  
+  assert &+[1/m[2] : m in polys611] eq q*(q+1)*(q^3 + q - 1)/12;
+  
+  return polys611;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints62(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable octuples
+  // of elements, 6 in the degree-6 extension of K and 2 in the 
+  // quadratic extension of K.
+  // Also give the order of the PGL2 stabilizer and its elements.
+  
+  // Note that the number of irreducible monic sextics is (q^6 - q^3 - q^2 + q)/6 and the
+  // number of monic irreducible quadratics is (q^2 - q)/2. Dividing the product
+  // of  these by the size of PGL(2,q) we get q*(q-1)*(q^3 + q - 1)/12.
+  // Therefore, the sum over all representatives of 1 over the 
+  // stabilizer of the representative should be q*(q-1)*(q^3 + q - 1)/12.
+  // We check this at the end.
+
+
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  
+  polys62:=[];
+  
+  sextics := sixpoints6(K);
+  
+  ns := nonsquare(K);
+  squares := [a : a in {b^2 : b in K} | a ne 0];
+  
+  quads := [(x+a)^2 - ns*b : a in K, b in squares];
+  I := Matrix(2,[K!1,0,0,1]);
+
+  for m in sextics do
+    f := m[1];
+    n := m[2];
+    G := m[3];
+    
+    if n eq 1 then
+      polys62 cat:= [<f*g, 1, [I]> : g in quads];
+    else
+      for g in quads do
+        quadorbit := [];
+        GG := [];
+        for M in G do 
+          gg := Numerator(Evaluate(g,(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]))*(M[2,1]*x + M[2,2])^2);
+          gg := gg/Coefficient(gg,2);
+          if g eq gg then
+            GG cat:= [M];
+          end if;
+          quadorbit cat:= [gg];
+        end for;
+        
+        if g eq Min(quadorbit) then
+          polys62 cat:= [<f*g, #GG, GG>];
+        end if;
+      end for;
+    end if;
+  end for;
+  
+  assert &+[1/m[2] : m in polys62] eq q*(q-1)*(q^3 + q - 1)/12;
+  
+  return polys62;
+end function;
+
+//------------------------------------------------------------------------------
+
+
+function eightpoints71(K);
+  // K is a finite field of size q = p^e, with p odd.
+  // Return all PGL(2,K) orbits of Galois-stable sextuples
+  // of elements, 1 in K and 7 in the degree-7 extension of K.
+
+  // Note that the number of irreducible monic septics is (q^7 - q)/7 and the
+  // number of rational points on P^1 is q + 1, and dividing the product of 
+  // these by the size of PGL(2,q) we get (q + 1)*(q^4 + q^2 + 1)/7.
+  // Therefore, the sum over all representatives of 1 over the 
+  // stabilizer of the representative should be (q + 1)*(q^4 + q^2 + 1)/7.
+  // We check this at the end.
+  
+  
+  q := #K;
+  p, e := Explode(Factorization(q)[1]);
+
+  R<x>:=PolynomialRing(K);
+  L := ext<K|7>;
+  I := Matrix(2,[K|1,0,0,1]);
+  
+  list := [];
+  polys71 := [];
+    
+  // Find a normal basis.
+  i := 0;
+  g := PrimitiveElement(L);
+  repeat 
+    i +:= 1;
+    a1 := g^i;
+    M := Matrix(7, 7, &cat[Eltseq(a1^(q^i),K) : i in [0..6]]);
+  until Rank(M) eq 7;
+
+  a1 := a1/Trace(a1,K);
+  a2 := a1^q;
+  a3 := a2^q;
+  a4 := a3^q;
+  a5 := a4^q;
+  a6 := a5^q;
+  a7 := a6^q;
+
+  
+  if p eq 7 then
+  
+    /*
+    Write elements of L in the normal basis. Normalize so that first
+    coefficient is 0 and first nonzero coefficient is 1.
+    This takes care of a*x + b group. The rotate, and renormalize.
+    For the main case, 
+      *** we assume that all coefficients are distinct ***
+    so that normal forms have no 0s other than first coefficient.
+    
+       [ 0, 1,           a,           b,           c,           d,           e ]
+       [ 0, 1, (1-b)/(1-a), (1-c)/(1-a), (1-d)/(1-a), (1-e)/(1-a),     1/(1-a) ]
+       [ 0, 1, (a-c)/(a-b), (a-d)/(a-b), (a-e)/(a-b),     a/(a-b), (a-1)/(a-b) ]
+       [ 0, 1, (b-d)/(b-c), (b-e)/(b-c),     b/(b-c), (b-1)/(b-c), (b-a)/(b-c) ]
+       [ 0, 1, (c-e)/(c-d),     c/(c-d), (c-1)/(c-d), (c-a)/(c-d), (c-b)/(c-d) ]
+       [ 0, 1,     d/(d-e), (d-1)/(d-e), (d-a)/(d-e), (d-b)/(d-e), (d-c)/(d-e) ]
+       [ 0, 1, (e-1)/e    , (e-a)/e    , (e-b)/e    , (e-c)/e    , (e-d)/e     ]
+
+
+    We also first run through the case where no "special conditions" hold,
+    that is, when none of the third column elements beneath the first row are
+    equal to a. (In this case, we can tell whether the first row is the smallest
+    just by looking at the third column.) Special conditions translate to:
+      b := a^2 - a + 1 ;       // 1st and 2nd equal
+      c := a*(1 + b - a);      // 1st and 3rd equal
+      d := a*c + b*(1-a);      // 1st and 4th equal
+      e := a*d + c*(1-a);      // 1st and 5th equal
+      e := d*(a-1)/a;          // 1st and 6th equal
+      e := 1/(1-a);            // 1st and 7th equal
+      
+    */
+    
+    K01 := [a : a in K | a ne 1 and a ne 0];
+    
+    for a in K01 do 
+      a1inv := 1/(1-a);
+      for b in K01 do 
+        if b ne a and a lt (1-b)*a1inv then
+          abinv := 1/(a-b);
+          for c in K01 do
+            if c ne a and c ne b and a lt (a-c)*abinv then
+              bcinv := 1/(b-c);
+              for d in K01 do
+                if d ne a and d ne b and d ne c and a lt (b-d)*bcinv then
+                  cdinv := 1/(c-d);
+                  for e in K01 do
+                    if e ne a and e ne b and e ne c and e ne d 
+                    and a lt (c-e)*cdinv and a lt d/(d-e) and a lt (e-1)/e then
+                    
+                      list cat:= [Vector(7,[L!0,1,a,b,c,d,e])];
+                    end if;
+                  end for;
+                end if;
+              end for;
+            end if;
+          end for;
+        end if;
+      end for;
+    end for;
+// 24405039    
+    
+    // Continue to assume that a,b,c,d,e are distinct and different from 0 and 1.
+    // But now go through special cases, assuming that *exactly one* holds.
+
+    // b := a^2 - a + 1 ;       // 1st and 2nd equal
+    for a in K01 do
+      ainv := 1/(1-a);
+      b := a^2 - a + 1;
+      // Note that b != a automatically, since otherwise we would have a = 1.
+      if b ne 0 and b ne 1 then
+        abinv := 1/(a-b);
+        for c in K01 do
+          if c ne a and c ne b and a lt (a-c)*abinv then
+            bcinv := 1/(b-c);
+            for d in K01 do
+              if d ne a and d ne b and d ne c and a lt (b-d)*bcinv then
+                cdinv := 1/(c-d);
+                for e in K01 do
+                  if e ne a and e ne b and e ne c and e ne d 
+                    and a lt (c-e)*cdinv and a lt d/(d-e) and a lt (e-1)/e 
+                    and [b,c,d,e] lt [(1-c)*ainv, (1-d)*ainv, (1-e)*ainv, ainv] then
+                    list cat:= [Vector(7,[L!0,1,a,b,c,d,e])];
+                  end if;
+                end for;
+              end if;
+            end for;
+          end if;
+        end for;
+      end if;
+    end for;
+      
+//    24602570
+    // c := a*(1 + b - a);      // 1st and 3rd equal
+
+    for a in K01 do 
+      a1inv := 1/(1-a);
+      for b in K01 do 
+        if b ne a and a lt (1-b)*a1inv then
+          abinv := 1/(a-b);
+          c := a*(1 + b - a);
+          if c ne a and c ne b and c ne 0 and c ne 1 then
+            bcinv := 1/(b-c);
+            for d in K01 do
+              if d ne a and d ne b and d ne c and a lt (b-d)*bcinv then
+                cdinv := 1/(c-d);
+                for e in K01 do
+                  if e ne a and e ne b and e ne c and e ne d 
+                  and a lt (c-e)*cdinv and a lt d/(d-e) and a lt (e-1)/e 
+                  and [b,c,d,e] lt [(a-d)*abinv, (a-e)*abinv, a*abinv, (a-1)*abinv] then
+                    list cat:= [Vector(7,[L!0,1,a,b,c,d,e])];
+                  end if;
+                end for;
+              end if;
+            end for;
+          end if;
+        end if;
+      end for;
+    end for;
+    
+//    24910605
+    
+    //  d := a*c + b*(1-a);      // 1st and 4th equal
+    
+    for a in K01 do 
+      a1inv := 1/(1-a);
+      for b in K01 do 
+        if b ne a and a lt (1-b)*a1inv then
+          abinv := 1/(a-b);
+          for c in K01 do
+            if c ne a and c ne b and a lt (a-c)*abinv then
+              bcinv := 1/(b-c);
+              d := a*c + b*(1-a); 
+              if d ne a and d ne b and d ne c and d ne 0 and d ne 1 then
+                cdinv := 1/(c-d);
+                for e in K01 do
+                  if e ne a and e ne b and e ne c and e ne d 
+                  and a lt (c-e)*cdinv and a lt d/(d-e) and a lt (e-1)/e 
+                  and [b,c,d,e] lt [(b-e)*bcinv, b*bcinv, (b-1)*bcinv, (b-a)*bcinv ] then
+                    list cat:= [Vector(7,[L!0,1,a,b,c,d,e])];
+                  end if;
+                end for;
+              end if;
+            end if;
+          end for;
+        end if;
+      end for;
+    end for;
+    
+// 25215232
+    
+    //  e := a*d + c*(1-a);      // 1st and 5th equal
+    
+    for a in K01 do 
+      a1inv := 1/(1-a);
+      for b in K01 do 
+        if b ne a and a lt (1-b)*a1inv then
+          abinv := 1/(a-b);
+          for c in K01 do
+            if c ne a and c ne b and a lt (a-c)*abinv then
+              bcinv := 1/(b-c);
+              for d in K01 do
+                if d ne a and d ne b and d ne c and a lt (b-d)*bcinv then
+                  cdinv := 1/(c-d);
+                  e := a*d + c*(1-a);  
+                  if e ne a and e ne b and e ne c and e ne d and e ne 0 and e ne 1
+                  and a lt d/(d-e) and a lt (e-1)/e 
+                  and [b,c,d,e] lt [c*cdinv, (c-1)*cdinv, (c-a)*cdinv, (c-b)*cdinv] then
+                    list cat:= [Vector(7,[L!0,1,a,b,c,d,e])];
+                  end if;
+                end if;
+              end for;
+            end if;
+          end for;
+        end if;
+      end for;
+    end for;
+
+// 25520218
+    //  e := d*(a-1)/a;          // 1st and 6th equal
+
+    for a in K01 do 
+      a1inv := 1/(1-a);
+      for b in K01 do 
+        if b ne a and a lt (1-b)*a1inv then
+          abinv := 1/(a-b);
+          for c in K01 do
+            if c ne a and c ne b and a lt (a-c)*abinv then
+              bcinv := 1/(b-c);
+              for d in K01 do
+                if d ne a and d ne b and d ne c and a lt (b-d)*bcinv then
+                  e := d*(a-1)/a;
+                  deinv := 1/(d-e);
+                  if e ne a and e ne b and e ne c and e ne d  and e ne 0 and e ne 1
+                  and a lt (c-e)/(c-d) and a lt (e-1)/e 
+                  and [b,c,d,e] lt [(d-1)*deinv, (d-a)*deinv, (d-b)*deinv, (d-c)*deinv] then
+                    list cat:= [Vector(7,[L!0,1,a,b,c,d,e])];
+                  end if;
+                end if;
+              end for;
+            end if;
+          end for;
+        end if;
+      end for;
+    end for;
+
+// 25823072
+
+    //  e := 1/(1-a);            // 1st and 7th equal
+
+    for a in K01 do 
+      a1inv := 1/(1-a);
+      for b in K01 do 
+        if b ne a and a lt (1-b)*a1inv then
+          abinv := 1/(a-b);
+          for c in K01 do
+            if c ne a and c ne b and a lt (a-c)*abinv then
+              bcinv := 1/(b-c);
+              for d in K01 do
+                if d ne a and d ne b and d ne c and a lt (b-d)*bcinv then
+                  e := 1/(1-a);  
+                  einv := 1/e;
+                  if e ne a and e ne b and e ne c and e ne d  and e ne 0 and e ne 1
+                  and a lt (c-e)/(c-d) and a lt d/(d-e) 
+                  and [b,c,d,e] lt [(e-a)*einv, (e-b)*einv, (e-c)*einv, (e-d)*einv] then
+                    list cat:= [Vector(7,[L!0,1,a,b,c,d,e])];
+                  end if;
+                end if;
+              end for;
+            end if;
+          end for;
+        end if;
+      end for;
+    end for;
+
+
+// 26218884
+
+
+
+
+
+    /* What do two simultaneous special cases look like?
+      b := a^2 - a + 1 ;       // 1st and 2nd equal
+      c := a*(1 + b - a);      // 1st and 3rd equal
+      d := a*c + b*(1-a);      // 1st and 4th equal
+      e := a*d + c*(1-a);      // 1st and 5th equal
+      e := d*(a-1)/a;          // 1st and 6th equal
+      e := 1/(1-a);            // 1st and 7th equal
+
+    
+    1, 2, 3:   b := a^2 - a + 1;    c := a*(1 + b - a); 
+    
+    1, 2, 4:   b := a^2 - a + 1;    d := a*c + b*(1-a);  
+    
+    1, 2, 5:   b := a^2 - a + 1;    e := a*d + c*(1-a); 
+    
+    1, 2, 6:   b := a^2 - a + 1;    e := d*(a-1)/a;  
+    
+    1, 2, 7:   b := a^2 - a + 1;    e := 1/(1-a);   
+    
+
+    1, 3, 4:   c := a*(1 + b - a);  d := a*c + b*(1-a);  
+    
+    1, 3, 5:   c := a*(1 + b - a);  e := 1/(1-a);   
+    
+    1, 3, 6:   c := a*(1 + b - a);  e := d*(a-1)/a;  
+    
+    1, 3, 7:   c := a*(1 + b - a);  e := 1/(1-a);   
+    
+
+    1, 4, 5:   d := a*c + b*(1-a);  e := a*d + c*(1-a); 
+    
+    1, 4, 6:   d := a*c + b*(1-a);  e := d*(a-1)/a;  
+    
+    1, 4, 7:   d := a*c + b*(1-a);  e := 1/(1-a);   
+    
+
+    1, 5, 6:   e := a*d + c*(1-a);  e := d*(a-1)/a;  
+    
+    
+               c*(1-a) = d*(a-1)/a - a*d = -d*(1-a+a^2)/a
+               c = d*(a^2-a+1)/(a^2-a) = d*(1 + 1/(a^2-a))
+               
+               c := d*(1 + 1/(a^2-a)); e := d*(1 - 1/a);  
+     
+    1, 5, 7:   e := a*d + c*(1-a);  e := 1/(1-a);   
+    
+               a*d = c*(a-1) + 1/(1-a)
+               
+               d := c*(1-1/a) - 1/(a^2-a);  e := 1/(1-a);
+    
+    1, 6, 7:   e := d*(a-1)/a;      e := 1/(1-a);   
+    
+               d := -1/(a*(a-1)^2); e := 1/(1-a);   
+    
+               
+    */            
+        
+    specials := {};
+    
+    // 1, 2, 3 ok
+    for a, d, e in K01 do
+      if #{0,1,a,d,e} eq 5 then
+        b := a^2 - a + 1;
+        c := a*(1 + b - a); 
+        if #{0,1,a,b,c,d,e} eq 7 then specials join:= {[0,1,a,b,c,d,e]}; end if;
+      end if;
+    end for;
+    
+    // 1, 2, 4 ok
+    for a, c, e in K01 do
+      if #{0,1,a,c,e} eq 5 then
+        b := a^2 - a + 1;    
+        d := a*c + b*(1-a);  
+        if #{0,1,a,b,c,d,e} eq 7 then specials join:= {[0,1,a,b,c,d,e]}; end if;
+      end if;
+    end for;
+    
+        
+    // 1, 2, 5; 1, 2, 6; 1, 2, 7 ok
+    for a, c, d in K01 do
+      if #{0,1,a,c,d} eq 5 then
+        b := a^2 - a + 1;    
+        e := a*d + c*(1-a); 
+        if #{0,1,a,b,c,d,e} eq 7 then specials join:= {[0,1,a,b,c,d,e]}; end if;
+        e := d*(a-1)/a;  
+        if #{0,1,a,b,c,d,e} eq 7 then specials join:= {[0,1,a,b,c,d,e]}; end if;
+        e := 1/(1-a);    
+        if #{0,1,a,b,c,d,e} eq 7 then specials join:= {[0,1,a,b,c,d,e]}; end if;
+      end if;
+    end for;
+    
+    // 1, 3, 4 ok
+    for a, b, e in K01 do
+      if #{0,1,a,b,e} eq 5 then
+        c := a*(1 + b - a);  
+        d := a*c + b*(1-a);  
+        if #{0,1,a,b,c,d,e} eq 7 then specials join:= {[0,1,a,b,c,d,e]}; end if;
+      end if;
+    end for;
+    
+    // 1, 3, 5; 1, 3, 6; 1, 3, 7 ok
+    for a, b, d in K01 do
+      if #{0,1,a,b,d} eq 5 then
+        c := a*(1 + b - a);  
+        e := a*d + c*(1-a);  
+        if #{0,1,a,b,c,d,e} eq 7 then specials join:= {[0,1,a,b,c,d,e]}; end if;
+        e := d*(a-1)/a;  
+        if #{0,1,a,b,c,d,e} eq 7 then specials join:= {[0,1,a,b,c,d,e]}; end if;
+        e := 1/(1-a);   
+        if #{0,1,a,b,c,d,e} eq 7 then specials join:= {[0,1,a,b,c,d,e]}; end if;
+      end if;
+    end for;
+ 
+ 
+    // 1, 4, 5; 1, 4, 6; 1, 4, 7 ok
+    for a, b, c in K01 do
+      if #{0,1,a,b,c} eq 5 then
+        d := a*c + b*(1-a); 
+        e := a*d + c*(1-a); 
+        if #{0,1,a,b,c,d,e} eq 7 then specials join:= {[0,1,a,b,c,d,e]}; end if;
+        e := d*(a-1)/a; 
+        if #{0,1,a,b,c,d,e} eq 7 then specials join:= {[0,1,a,b,c,d,e]}; end if;
+        e := 1/(1-a);   
+        if #{0,1,a,b,c,d,e} eq 7 then specials join:= {[0,1,a,b,c,d,e]}; end if;
+      end if;
+    end for;
+
+
+    // 1, 5, 6 ok
+    for a, b, d in K01 do
+      if #{0,1,a,b,d} eq 5 then
+        c := d*(1 + 1/(a^2-a));
+        e := d*(1 - 1/a);  
+        if #{0,1,a,b,c,d,e} eq 7 then specials join:= {[0,1,a,b,c,d,e]}; end if;
+      end if;
+    end for;
+
+
+    // 1, 5, 7; 1, 6, 7 ok
+    for a, b, c in K01 do
+      if #{0,1,a,b,c} eq 5 then
+        e := 1/(1-a);  
+        d := c*(1-1/a) - 1/(a^2-a);  
+        if #{0,1,a,b,c,d,e} eq 7 then specials join:= {[0,1,a,b,c,d,e]}; end if;
+        d := -a/(a-1)^2; 
+        if #{0,1,a,b,c,d,e} eq 7 then specials join:= {[0,1,a,b,c,d,e]}; end if;
+      end if;
+    end for;
+          
+    
+    /* 
+    Where do the sets with automorphisms fall in this classification?
+    Up to ax+b group, there is only one:
+    x^7 - x = e
+    for some e in K with nonzero trace to GF(7).
+
+    If this corresponds to [t, u, v, w, x, y, z]
+    then acting by Galois changes this to 
+    [u, v, w, x, y, z, t]
+    and also to
+    [t + f, u + f, v + f, w + f, x + f, y + f, z + f]
+    where 1 = [f, f, f, f, f, f, f]   i.e. f := 1/Trace_{L/K}(alpha) for a generator of our normal basis.
+    
+    so our vector is 
+    [u, u + f, u + 2*f, u+3*f, u+4*f, u+5*f, u+6*f]
+    
+    Normalized, this is
+    [0, 1, 2, 3, 4, 5, 6]
+    And we check that is is equal to all of its normalized conjugates.
+    */
+    
+    veryspecial := [K!0,1,2,3,4,5,6];
+    specials := {a : a in specials | not a eq veryspecial};
+
+    for s in specials do
+      zero, one, a, b, c, d, e := Explode(s);
+      if s lt [ 0, 1, (1-b)/(1-a), (1-c)/(1-a), (1-d)/(1-a), (1-e)/(1-a),     1/(1-a) ] and
+         s lt [ 0, 1, (a-c)/(a-b), (a-d)/(a-b), (a-e)/(a-b),     a/(a-b), (a-1)/(a-b) ] and
+         s lt [ 0, 1, (b-d)/(b-c), (b-e)/(b-c),     b/(b-c), (b-1)/(b-c), (b-a)/(b-c) ] and
+         s lt [ 0, 1, (c-e)/(c-d),     c/(c-d), (c-1)/(c-d), (c-a)/(c-d), (c-b)/(c-d) ] and
+         s lt [ 0, 1,     d/(d-e), (d-1)/(d-e), (d-a)/(d-e), (d-b)/(d-e), (d-c)/(d-e) ] and
+         s lt [ 0, 1, (e-1)/e    , (e-a)/e    , (e-b)/e    , (e-c)/e    , (e-d)/e     ] then
+        list cat:= [Vector(7,[L!zero,one,a,b,c,d,e])];  
+      end if;
+    end for;
+
+// 26296097
+
+    // Vectors of type 211111
+    // [0, 0, 1, a, b, c, d]
+    // [0, 1, 0, a, b, c, d]
+    // [0, 1, a, 0, b, c, d]
+    
+    // Vectors of type 22111
+
+    // [0, 0, 1, 1, a, b, c]
+    // [0, 0, 1, a, b, c, 1]
+    // [0, 1, 0, 1, a, b, c]
+
+    // [0, 0, 1, a, b, 1, c]
+    // [0, 0, 1, a, b, c, b]
+    // [0, 1, 0, a, b, 1, c]
+
+    // [0, 0, 1, a, a, b, c]
+    // [0, 1, 0, a, b, c, a]
+    // [0, a, 1, 0, b, c, 1]
+
+    // [0, 0, 1, a, 1, b, c]
+    // [0, 0, 1, a, b, c, a]
+    // [0, 1, 0, a, 1, b, c]
+
+    // [0, 0, 1, a, b, a, c]
+    // [0, 1, 0, a, b, a, c]
+    // [0, 1, a, 0, b, 1, c] 
+    
+
+
+    // Vectors of type 2221
+    
+    // [0, 1, 1, a, a, b, b]
+    // [0, 1, 1, a, b, a, b]
+    // [0, 1, 1, a, b, b, a]
+    // [0, 1, a, 1, a, b, b]
+    // [0, 1, a, 1, b, a, b]
+    // [0, 1, a, 1, b, b, a]
+    // [0, 1, a, a, 1, b, b]
+    // [0, 1, a, b, 1, a, b]
+    // [0, 1, a, b, 1, b, a]
+    // [0, 1, a, a, b, 1, b]
+    // [0, 1, a, b, a, 1, b]
+    // [0, 1, a, b, b, 1, a]
+    // [0, 1, a, a, b, b, 1]
+    // [0, 1, a, b, a, b, 1]
+    // [0, 1, a, b, b, a, 1]
+        
+    
+    
+    // Vectors of type 31111
+    // [0, 0, 0, 1, a, b, c]
+    // [0, 0, 1, 0, a, b, c]
+    // [0, 0, 1, a, 0, b, c]
+    // [0, 0, 1, a, b, 0, c]
+    // [0, 1, 0, a, 0, b, c]
+    
+    
+    // Vectors of type 3211
+    // [0, 0, 0, 1, 1, a, b]
+    // [0, 0, 0, 1, a, 1, b]
+    // [0, 0, 0, 1, a, b, 1]
+    // [0, 0, 0, 1, a, a, b]
+    // [0, 0, 0, 1, a, b, a]
+    // [0, 0, 0, 1, a, b, b]
+
+    // [0, 0, 1, 0, 1, a, b]
+    // [0, 0, 1, 0, a, 1, b]
+    // [0, 0, 1, 0, a, b, 1]
+    // [0, 0, 1, 0, a, a, b]
+    // [0, 0, 1, 0, a, b, a]
+    // [0, 0, 1, 0, a, b, b]
+
+    // [0, 0, 1, 1, 0, a, b]
+    // [0, 0, 1, a, 0, 1, b]
+    // [0, 0, 1, a, 0, b, 1]
+    // [0, 0, 1, a, 0, a, b]
+    // [0, 0, 1, a, 0, b, a]
+    // [0, 0, 1, a, 0, b, b]
+
+    // [0, 0, 1, 1, a, 0, b]
+    // [0, 0, 1, a, 1, 0, b]
+    // [0, 0, 1, a, b, 0, 1]
+    // [0, 0, 1, a, a, 0, b]
+    // [0, 0, 1, a, b, 0, a]
+    // [0, 0, 1, a, b, 0, b]
+
+    // [0, 1, 0, 1, 0, a, b]
+    // [0, 1, 0, a, 0, 1, b]
+    // [0, 1, 0, a, 0, b, 1]
+    // [0, 1, 0, a, 0, a, b]
+    // [0, 1, 0, a, 0, b, a]
+    // [0, 1, 0, a, 0, b, b]
+    
+    
+    
+    // Vectors of type 322
+    // [0, 0, 0, 1, 1, a, a]
+    // [0, 0, 0, 1, a, 1, a]
+    // [0, 0, 0, 1, a, a, 1]
+
+    // [0, 0, 1, 0, 1, a, a]
+    // [0, 0, 1, 0, a, 1, a]
+    // [0, 0, 1, 0, a, a, 1]
+
+    // [0, 0, 1, 1, 0, a, a]
+    // [0, 0, 1, a, 0, 1, a]
+    // [0, 0, 1, a, 0, a, 1]
+
+    // [0, 0, 1, 1, a, 0, a]
+    // [0, 0, 1, a, 1, 0, a]
+    // [0, 0, 1, a, a, 0, 1]
+
+    // [0, 1, 0, 1, 0, a, a]
+    // [0, 1, 0, a, 0, 1, a]
+    // [0, 1, 0, a, 0, a, 1]
+    
+
+    // Vectors of type 331
+    // [0, 1, 1, 1, a, a, a]
+    // [0, 1, 1, a, 1, a, a]
+    // [0, 1, 1, a, a, 1, a]
+    // [0, 1, 1, a, a, a, 1]
+    // [0, 1, a, 1, 1, a, a]
+    // [0, 1, a, 1, a, 1, a]
+    // [0, 1, a, 1, a, a, 1]
+    // [0, 1, a, a, 1, 1, a]
+    // [0, 1, a, a, 1, a, 1]
+    // [0, 1, a, a, a, 1, 1]
+
+    
+
+
+
+    
+
+    // Vectors of type 4111
+    // [0, 0, 0, 0, 1, a, b]
+    // [0, 0, 0, 1, 0, a, b]
+    // [0, 0, 0, 1, a, 0, b]
+    // [0, 0, 1, 0, 0, a, b]
+    // [0, 0, 1, 0, a, 0, b]
+    
+    
+    
+    
+    // Vectors of type 421
+    // [0, 0, 0, 0, 1, 1, a]
+    // [0, 0, 0, 0, 1, a, 1]
+    // [0, 0, 0, 0, 1, a, a]
+
+    // [0, 0, 0, 1, 0, 1, a]
+    // [0, 0, 0, 1, 0, a, 1]
+    // [0, 0, 0, 1, 0, a, a]
+
+    // [0, 0, 0, 1, 1, 0, a]
+    // [0, 0, 0, 1, a, 0, 1]
+    // [0, 0, 0, 1, a, 0, a]
+
+    // [0, 0, 1, 0, 0, 1, a]
+    // [0, 0, 1, 0, 0, a, 1]
+    // [0, 0, 1, 0, 0, a, a]
+
+    // [0, 0, 1, 0, 1, 0, a]
+    // [0, 0, 1, 0, a, 0, 1]
+    // [0, 0, 1, 0, a, 0, a]
+
+
+    // Vectors of type 43
+    // [0, 0, 0, 0, 1, 1, 1]
+    // [0, 0, 0, 1, 0, 1, 1]
+    // [0, 0, 0, 1, 1, 0, 1]
+    // [0, 0, 1, 0, 0, 1, 1]
+    // [0, 0, 1, 0, 1, 0, 1]
+
+    // Vectors of type 511
+    // [0, 0, 0, 0, 0, 1, a]
+    // [0, 0, 0, 0, 1, 0, a]
+    // [0, 0, 0, 1, 0, 0, a]
+    
+    // Vectors of type 52
+    // [0, 0, 0, 0, 0, 1, 1]
+    // [0, 0, 0, 0, 1, 0, 1]
+    // [0, 0, 0, 1, 0, 0, 1]
+
+    // Vectors of type 61
+    // [0, 0, 0, 0, 0, 0, 1]
+    
+    // Vectors of type 7 --- none. These correspond to elements of K.
+
+
+    for a, b, c, d in K01 do
+      if #{a,b,c,d} eq 4 then 
+        list cat:= [Vector(7,[L|0, 0, 1, a, b, c, d]),
+                    Vector(7,[L|0, 1, 0, a, b, c, d]),
+                    Vector(7,[L|0, 1, a, 0, b, c, d])];
+      end if;
+    end for;
+    
+//     39138377
+
+    for a, b, c in K01 do
+      if #{a,b,c} eq 3 then
+        list cat:= [Vector(7,[L|0, 0, 1, 1, a, b, c]),
+                    Vector(7,[L|0, 0, 1, a, b, c, 1]),
+                    Vector(7,[L|0, 1, 0, 1, a, b, c]),
+                    Vector(7,[L|0, 0, 1, a, b, 1, c]),
+                    Vector(7,[L|0, 0, 1, a, b, c, b]),
+                    Vector(7,[L|0, 1, 0, a, b, 1, c]),
+                    Vector(7,[L|0, 0, 1, a, a, b, c]),
+                    Vector(7,[L|0, 1, 0, a, b, c, a]),
+                    Vector(7,[L|0, a, 1, 0, b, c, 1]),
+                    Vector(7,[L|0, 0, 1, a, 1, b, c]),
+                    Vector(7,[L|0, 0, 1, a, b, c, a]),
+                    Vector(7,[L|0, 1, 0, a, 1, b, c]),
+                    Vector(7,[L|0, 0, 1, a, b, a, c]),
+                    Vector(7,[L|0, 1, 0, a, b, a, c]),
+                    Vector(7,[L|0, 1, a, 0, b, 1, c]),
+                    Vector(7,[L|0, 0, 0, 1, a, b, c]),
+                    Vector(7,[L|0, 0, 1, 0, a, b, c]),
+                    Vector(7,[L|0, 0, 1, a, 0, b, c]),
+                    Vector(7,[L|0, 0, 1, a, b, 0, c]),
+                    Vector(7,[L|0, 1, 0, a, 0, b, c])];
+      end if;
+    end for;
+
+//    41084177
+
+    for a, b in K01 do
+      if #{a,b} eq 2 then
+        list cat:= [Vector(7,[L|0, 1, 1, a, a, b, b]),
+                    Vector(7,[L|0, 1, 1, a, b, a, b]),
+                    Vector(7,[L|0, 1, 1, a, b, b, a]),
+                    Vector(7,[L|0, 1, a, 1, a, b, b]),
+                    Vector(7,[L|0, 1, a, 1, b, a, b]),
+                    Vector(7,[L|0, 1, a, 1, b, b, a]),
+                    Vector(7,[L|0, 1, a, a, 1, b, b]),
+                    Vector(7,[L|0, 1, a, b, 1, a, b]),
+                    Vector(7,[L|0, 1, a, b, 1, b, a]),
+                    Vector(7,[L|0, 1, a, a, b, 1, b]),
+                    Vector(7,[L|0, 1, a, b, a, 1, b]),
+                    Vector(7,[L|0, 1, a, b, b, 1, a]),
+                    Vector(7,[L|0, 1, a, a, b, b, 1]),
+                    Vector(7,[L|0, 1, a, b, a, b, 1]),
+                    Vector(7,[L|0, 1, a, b, b, a, 1]),
+                    Vector(7,[L|0, 0, 0, 1, 1, a, b]),
+                    Vector(7,[L|0, 0, 0, 1, a, 1, b]),
+                    Vector(7,[L|0, 0, 0, 1, a, b, 1]),
+                    Vector(7,[L|0, 0, 0, 1, a, a, b]),
+                    Vector(7,[L|0, 0, 0, 1, a, b, a]),
+                    Vector(7,[L|0, 0, 0, 1, a, b, b]),
+                    Vector(7,[L|0, 0, 1, 0, 1, a, b]),
+                    Vector(7,[L|0, 0, 1, 0, a, 1, b]),
+                    Vector(7,[L|0, 0, 1, 0, a, b, 1]),
+                    Vector(7,[L|0, 0, 1, 0, a, a, b]),
+                    Vector(7,[L|0, 0, 1, 0, a, b, a]),
+                    Vector(7,[L|0, 0, 1, 0, a, b, b]),
+                    Vector(7,[L|0, 0, 1, 1, 0, a, b]),
+                    Vector(7,[L|0, 0, 1, a, 0, 1, b]),
+                    Vector(7,[L|0, 0, 1, a, 0, b, 1]),
+                    Vector(7,[L|0, 0, 1, a, 0, a, b]),
+                    Vector(7,[L|0, 0, 1, a, 0, b, a]),
+                    Vector(7,[L|0, 0, 1, a, 0, b, b]),
+                    Vector(7,[L|0, 0, 1, 1, a, 0, b]),
+                    Vector(7,[L|0, 0, 1, a, 1, 0, b]),
+                    Vector(7,[L|0, 0, 1, a, b, 0, 1]),
+                    Vector(7,[L|0, 0, 1, a, a, 0, b]),
+                    Vector(7,[L|0, 0, 1, a, b, 0, a]),
+                    Vector(7,[L|0, 0, 1, a, b, 0, b]),
+                    Vector(7,[L|0, 1, 0, 1, 0, a, b]),
+                    Vector(7,[L|0, 1, 0, a, 0, 1, b]),
+                    Vector(7,[L|0, 1, 0, a, 0, b, 1]),
+                    Vector(7,[L|0, 1, 0, a, 0, a, b]),
+                    Vector(7,[L|0, 1, 0, a, 0, b, a]),
+                    Vector(7,[L|0, 1, 0, a, 0, b, b]),
+                    Vector(7,[L|0, 0, 0, 0, 1, a, b]),
+                    Vector(7,[L|0, 0, 0, 1, 0, a, b]),
+                    Vector(7,[L|0, 0, 0, 1, a, 0, b]),
+                    Vector(7,[L|0, 0, 1, 0, 0, a, b]),
+                    Vector(7,[L|0, 0, 1, 0, a, 0, b])];
+      end if;
+    end for;
+
+// 41192277
+
+    for a in K01 do
+      list cat:= [Vector(7,[L|0, 0, 0, 1, 1, a, a]),
+                  Vector(7,[L|0, 0, 0, 1, a, 1, a]),
+                  Vector(7,[L|0, 0, 0, 1, a, a, 1]),
+                  Vector(7,[L|0, 0, 1, 0, 1, a, a]),
+                  Vector(7,[L|0, 0, 1, 0, a, 1, a]),
+                  Vector(7,[L|0, 0, 1, 0, a, a, 1]),
+                  Vector(7,[L|0, 0, 1, 1, 0, a, a]),
+                  Vector(7,[L|0, 0, 1, a, 0, 1, a]),
+                  Vector(7,[L|0, 0, 1, a, 0, a, 1]),
+                  Vector(7,[L|0, 0, 1, 1, a, 0, a]),
+                  Vector(7,[L|0, 0, 1, a, 1, 0, a]),
+                  Vector(7,[L|0, 0, 1, a, a, 0, 1]),
+                  Vector(7,[L|0, 1, 0, 1, 0, a, a]),
+                  Vector(7,[L|0, 1, 0, a, 0, 1, a]),
+                  Vector(7,[L|0, 1, 0, a, 0, a, 1]),
+                  Vector(7,[L|0, 0, 0, 0, 1, 1, a]),
+                  Vector(7,[L|0, 0, 0, 0, 1, a, 1]),
+                  Vector(7,[L|0, 0, 0, 0, 1, a, a]),
+                  Vector(7,[L|0, 0, 0, 1, 0, 1, a]),
+                  Vector(7,[L|0, 0, 0, 1, 0, a, 1]),
+                  Vector(7,[L|0, 0, 0, 1, 0, a, a]),
+                  Vector(7,[L|0, 0, 0, 1, 1, 0, a]),
+                  Vector(7,[L|0, 0, 0, 1, a, 0, 1]),
+                  Vector(7,[L|0, 0, 0, 1, a, 0, a]),
+                  Vector(7,[L|0, 0, 1, 0, 0, 1, a]),
+                  Vector(7,[L|0, 0, 1, 0, 0, a, 1]),
+                  Vector(7,[L|0, 0, 1, 0, 0, a, a]),
+                  Vector(7,[L|0, 0, 1, 0, 1, 0, a]),
+                  Vector(7,[L|0, 0, 1, 0, a, 0, 1]),
+                  Vector(7,[L|0, 0, 1, 0, a, 0, a]),
+                  Vector(7,[L|0, 0, 0, 0, 0, 1, a]),
+                  Vector(7,[L|0, 0, 0, 0, 1, 0, a]),
+                  Vector(7,[L|0, 0, 0, 1, 0, 0, a]),
+                  Vector(7,[L|0, 1, 1, 1, a, a, a]),
+                  Vector(7,[L|0, 1, 1, a, 1, a, a]),
+                  Vector(7,[L|0, 1, 1, a, a, 1, a]),
+                  Vector(7,[L|0, 1, 1, a, a, a, 1]),
+                  Vector(7,[L|0, 1, a, 1, 1, a, a]),
+                  Vector(7,[L|0, 1, a, 1, a, 1, a]),
+                  Vector(7,[L|0, 1, a, 1, a, a, 1]),
+                  Vector(7,[L|0, 1, a, a, 1, 1, a]),
+                  Vector(7,[L|0, 1, a, a, 1, a, 1]),
+                  Vector(7,[L|0, 1, a, a, a, 1, 1])];
+    end for;
+
+// 41194298
+
+    list cat:= [Vector(7,[L|0, 0, 0, 0, 1, 1, 1]),
+                Vector(7,[L|0, 0, 0, 1, 0, 1, 1]),
+                Vector(7,[L|0, 0, 0, 1, 1, 0, 1]),
+                Vector(7,[L|0, 0, 1, 0, 0, 1, 1]),
+                Vector(7,[L|0, 0, 1, 0, 1, 0, 1]),
+                Vector(7,[L|0, 0, 0, 0, 0, 1, 1]),
+                Vector(7,[L|0, 0, 0, 0, 1, 0, 1]),
+                Vector(7,[L|0, 0, 0, 1, 0, 0, 1]),
+                Vector(7,[L|0, 0, 0, 0, 0, 0, 1])];
+
+//    41194307
+
+    avec := Vector([a1,a2,a3,a4,a5,a6,a7]);
+    
+    for v in list do
+      polys71 cat:= [<MinimalPolynomial(InnerProduct(v,avec),K),1,[I]>];
+    end for;
+   
+    Z := Matrix(2,[K|1,1,0,1]);
+    
+    // find an element of K whose trace to GF(7) is nonzero.
+    g := PrimitiveElement(K);
+    t := K!1;
+    while Trace(t,GF(7)) eq 0 do
+      t*:=g;
+    end while;
+    t := t/Trace(t,GF(7));
+
+    polys71 cat:= [<x^7 - x - t, 7, [Z^i : i in [0..6]]>];
+
+  else
+    // We are not in characteristic 7.
+    
+    
+    /*
+
+
+
+    Consider trace-0 elements. Basis for them (in terms of ai's):
+    [1,0,0,0,0,0,-1]
+    [0,1,0,0,0,0,-1]
+    [0,0,1,0,0,0,-1]
+    [0,0,0,1,0,0,-1]
+    [0,0,0,0,1,0,-1]
+    [0,0,0,0,0,1,-1]
+    
+    1. Vectors with no zeros. Enumerate as
+         [1,   a,   b,   c,   d,   e,   f]
+       where a,b,c,d,e, f:=-a-b-c-d-e-1 are nonzero 
+       Scaled and rotated:
+         [1,   a,   b,   c,   d,   e,   f]
+         [1, b/a, c/a, d/a, e/a, f/a, 1/a]
+         [1, c/b, d/b, e/b, f/b, 1/b, a/b]
+         [1, d/c, e/c, f/c, 1/c, a/c, b/c]
+         [1, e/d, f/d, 1/d, a/d, b/d, c/d]
+         [1, f/e, 1/e, a/e, b/e, c/e, d/e]
+         [1, 1/f, a/f, b/f, c/f, d/f, e/f]
+         
+         Can just check second coordinates as long as:
+           b != a^2
+           c != a*b
+           d != a*c
+           e != a*d
+           f != a*e
+           1 != a*f
+         
+    2. Vectors with one zero. Place it first.
+         [0,1,a,b,c,d,-1-a-b-c-d]
+       where a,b,c,d,a+b+c+d+1 are nonzero
+       
+    3. Vectors with two zeroes.
+         [0,0,1,a,b,c,-1-a-b-c]   a,b,c,a+b+c+1 nonzero
+         [0,1,0,a,b,c,-1-a-b-c]   a,b,c,a+b+c+1 nonzero
+         [0,1,a,0,b,c,-1-a-b-c]   a,b,c,a+b+c+1 nonzero
+         
+    4. Vectors with three zeroes
+         [0,0,0,1,a,b,-1-a-b]     a,b,a+b+1 nonzero
+         [0,0,1,0,a,b,-1-a-b]     a,b,a+b+1 nonzero
+         [0,0,1,a,0,b,-1-a-b]     a,b,a+b+1 nonzero
+         [0,0,1,a,b,0,-1-a-b]     a,b,a+b+1 nonzero
+         [0,1,0,a,0,b,-1-a-b]     a,b,a+b+1 nonzero
+    
+    5. Vectors with four zeroes
+         [0,0,0,0,1,a,-1-a]       a,a+1 nonzero
+         [0,0,0,1,0,a,-1-a]       a,a+1 nonzero
+         [0,0,0,1,a,0,-1-a]       a,a+1 nonzero
+         [0,0,1,0,a,0,-1-a]       a,a+1 nonzero
+         
+    6. Vectors with five zeroes
+         [0,0,0,0,0,1,-1]
+         [0,0,0,0,1,0,-1]
+         [0,0,0,1,0,0,-1]
+    
+    
+    */
+    
+    Kstar := [a : a in K | a ne 0];
+
+    // First, no special cases
+    for a in Kstar do
+      ainv := 1/a;
+      for b in Kstar do 
+        if a lt b*ainv then
+          binv := 1/b;
+          for c in Kstar do
+            if a lt c*binv then
+              cinv := 1/c;
+              for d in Kstar do
+                if a lt d*cinv then
+                  dinv := 1/d;
+                  for e in Kstar do
+                    if a lt e*dinv then
+                      f := -a-b-c-d-e-1;
+                      if f ne 0 and a lt f/e and a lt 1/f then
+                        list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
+                      end if;
+                    end if;
+                  end for;
+                end if;
+              end for;
+            end if;
+          end for;
+        end if;
+      end for;
+    end for;
+    
+
+    // b = a^2
+    for a in Kstar do
+      ainv := 1/a;
+      b := a^2;
+          binv := 1/b;
+          for c in Kstar do
+            if a lt c*binv then
+              cinv := 1/c;
+              for d in Kstar do
+                if a lt d*cinv then
+                  dinv := 1/d;
+                  for e in Kstar do
+                    if a lt e*dinv then
+                      f := -a-b-c-d-e-1;
+                      if f ne 0 and a lt f/e and a lt 1/f 
+                        and [b,   c,   d,   e,   f] lt [c/a, d/a, e/a, f/a, 1/a] then
+                        list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
+                      end if;
+                    end if;
+                  end for;
+                end if;
+              end for;
+            end if;
+          end for;
+    end for;
+
+    // c := a*b
+    for a in Kstar do
+      ainv := 1/a;
+      for b in Kstar do 
+        if a lt b*ainv then
+          binv := 1/b;
+          c := a*b;
+              cinv := 1/c;
+              for d in Kstar do
+                if a lt d*cinv then
+                  dinv := 1/d;
+                  for e in Kstar do
+                    if a lt e*dinv then
+                      f := -a-b-c-d-e-1;
+                      if f ne 0 and a lt f/e and a lt 1/f
+                        and [b,   c,   d,   e,   f] lt [d/b, e/b, f/b, 1/b, a/b] then
+                        list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
+                      end if;
+                    end if;
+                  end for;
+                end if;
+              end for;
+        end if;
+      end for;
+    end for;
+
+    // d := a*c
+    for a in Kstar do
+      ainv := 1/a;
+      for b in Kstar do 
+        if a lt b*ainv then
+          binv := 1/b;
+          for c in Kstar do
+            if a lt c*binv then
+              cinv := 1/c;
+              d := a*c;
+                  dinv := 1/d;
+                  for e in Kstar do
+                    if a lt e*dinv then
+                      f := -a-b-c-d-e-1;
+                      if f ne 0 and a lt f/e and a lt 1/f 
+                        and [b,   c,   d,   e,   f] lt [e/c, f/c, 1/c, a/c, b/c] then
+                        list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
+                      end if;
+                    end if;
+                  end for;
+            end if;
+          end for;
+        end if;
+      end for;
+    end for;
+
+    // e:=a*d
+    for a in Kstar do
+      ainv := 1/a;
+      for b in Kstar do 
+        if a lt b*ainv then
+          binv := 1/b;
+          for c in Kstar do
+            if a lt c*binv then
+              cinv := 1/c;
+              for d in Kstar do
+                if a lt d*cinv then
+                  dinv := 1/d;
+                  e := a*d;
+                      f := -a-b-c-d-e-1;
+                      if f ne 0 and a lt f/e and a lt 1/f 
+                        and [b,   c,   d,   e,   f] lt [f/d, 1/d, a/d, b/d, c/d] then
+                        list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
+                      end if;
+                end if;
+              end for;
+            end if;
+          end for;
+        end if;
+      end for;
+    end for;
+    
+    // f := a*e
+    // -a-b-c-d-e-1 = a*e
+    for a in Kstar do
+      ainv := 1/a;
+      for b in Kstar do 
+        if a lt b*ainv then
+          binv := 1/b;
+          for c in Kstar do
+            if a lt c*binv then
+              cinv := 1/c;
+              for e in Kstar do
+                d := -a-b-c-e-1-a*e;
+                if d ne 0 and a lt d*cinv and a lt e/d then
+                      f := -a-b-c-d-e-1;
+                      if f ne 0 and a lt 1/f 
+                      and [b,   c,   d,   e,   f] lt [1/e, a/e, b/e, c/e, d/e] then
+                        list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
+                      end if;
+                end if;
+              end for;
+            end if;
+          end for;
+        end if;
+      end for;
+    end for;
+
+    
+    // 1 = a*f
+    // 1 = a*(-a-b-c-d-e-1)
+    // 1/a + a + b + c + d + e + 1 = 0
+    for a in Kstar do
+      ainv := 1/a;
+      for b in Kstar do 
+        if a lt b*ainv then
+          binv := 1/b;
+          for c in Kstar do
+            if a lt c*binv then
+              cinv := 1/c;
+              for d in Kstar do
+                if a lt d*cinv then
+                  dinv := 1/d;
+                  e := -(ainv + a + b + c + d + 1);
+                    if a lt e*dinv then
+                      f := -a-b-c-d-e-1;
+                      if f ne 0 and a lt f/e 
+                      and [b,   c,   d,   e,   f] lt [a/f, b/f, c/f, d/f, e/f] then
+                        list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
+                      end if;
+                    end if;
+                end if;
+              end for;
+            end if;
+          end for;
+        end if;
+      end for;
+    end for;
+
+/*
+(at least) two special cases at once:
+*/
+
+    specials := {};
+    
+    
+    // b := a^2, c := a*b
+    for a in Kstar do
+      b := a^2; c:= a*b;
+      for d,e in Kstar do
+        f := -1-a-b-c-d-e;
+        if f ne 0 then 
+          specials join:= {[1,a,b,c,d,e,f]}; 
+        end if;
+      end for;
+    end for;
+
+    // b := a^2, d := a*c
+    for a in Kstar do
+      b := a^2;
+      for c in Kstar do
+        d := a*c;
+        for e in Kstar do
+          f := -1-a-b-c-d-e;
+          if f ne 0 then 
+            specials join:= {[1,a,b,c,d,e,f]}; 
+          end if;
+        end for;
+      end for;
+    end for;
+
+    // b := a^2, e := a*d
+    for a in Kstar do
+      b := a^2;
+      for c in Kstar do
+        for d in Kstar do
+          e := a*d;
+          f := -1-a-b-c-d-e;
+          if f ne 0 then 
+            specials join:= {[1,a,b,c,d,e,f]}; 
+          end if;
+        end for;
+      end for;
+    end for;
+    
+    // b := a^2, f := a*e 
+    // b := a^2, d := -a-b-c-e-1-a*e;
+    for a in Kstar do
+      b := a^2;
+      for c in Kstar do
+        for e in Kstar do
+          d := -a-b-c-e-1-a*e;
+          f := -1-a-b-c-d-e;
+          if d ne 0 then 
+            specials join:= {[1,a,b,c,d,e,f]}; 
+          end if;
+        end for;
+      end for;
+    end for;
+    
+    // b := a^2, 1 = a*f
+    // b := a^2, e := -(1/a + a + b + c + d + 1);
+    for a in Kstar do
+      ainv := 1/a;
+      b := a^2;
+      for c in Kstar do
+        for d in Kstar do
+          e := -(ainv + a + b + c + d + 1);
+          f := -1-a-b-c-d-e;
+          if e ne 0 then 
+            specials join:= {[1,a,b,c,d,e,f]}; 
+          end if;
+        end for;
+      end for;
+    end for;
+      
+
+    // c := a*b, d := a*c
+    for a, b in Kstar do
+      c := a*b;
+      d := a*c;
+      for e in Kstar do
+        f := -1-a-b-c-d-e;
+        if f ne 0 then 
+          specials join:= {[1,a,b,c,d,e,f]}; 
+        end if;
+      end for;
+    end for;
+
+    // c := a*b, e := a*d
+    for a, b in Kstar do
+      c := a*b;
+      for d in Kstar do
+        e := a*d;
+        f := -1-a-b-c-d-e;
+        if f ne 0 then 
+          specials join:= {[1,a,b,c,d,e,f]}; 
+        end if;
+      end for;
+    end for;
+
+    // c := a*b, f := a*e;
+    // c := a*b, d := -a-b-c-e-1-a*e;
+    for a, b in Kstar do
+      c := a*b;
+      for e in Kstar do
+        d := -a-b-c-e-1-a*e;
+        f := -1-a-b-c-d-e;
+        if d ne 0 then 
+          specials join:= {[1,a,b,c,d,e,f]}; 
+        end if;
+      end for;
+    end for;
+
+    // c := a*b, 1 = a*f
+    // c := a*b, e := -(1/a + a + b + c + d + 1);
+    for a, b in Kstar do
+      ainv := 1/a;
+      c := a*b;
+      for d in Kstar do
+        e := -(ainv + a + b + c + d + 1);
+        f := -1-a-b-c-d-e;
+        if e ne 0 then 
+          specials join:= {[1,a,b,c,d,e,f]}; 
+        end if;
+      end for;
+    end for;
+
+    // d := a*c, e := a*d
+    for a, b, c in Kstar do
+      d := a*c;
+      e := a*d;
+      f := -1-a-b-c-d-e;
+      if f ne 0 then 
+        specials join:= {[1,a,b,c,d,e,f]}; 
+      end if;
+    end for;
+
+    // d := a*c, f := a*e
+    // d := a*c, b := -a-c-d-e-1-a*e;
+    for a, c, e in Kstar do
+      d := a*c;
+      b := -a-c-d-e-1-a*e;
+      f := -1-a-b-c-d-e;
+      if b ne 0 then 
+        specials join:= {[1,a,b,c,d,e,f]}; 
+      end if;
+    end for;
+
+    // d := a*c, 1 = a*f
+    // d := a*c, e := -(1/a + a + b + c + d + 1);
+    for a, b, c in Kstar do
+      d := a*c;
+      e := -(1/a + a + b + c + d + 1);
+      f := -1-a-b-c-d-e;
+      if e ne 0 then 
+        specials join:= {[1,a,b,c,d,e,f]}; 
+      end if;
+    end for;
+
+    // e := a*d, f := a*e
+    // e := a*d, c := -a-b-d-e-1-a*e;
+    for a, b, d in Kstar do
+      e := a*d;
+      c := -a-b-d-e-1-a*e;
+      f := -1-a-b-c-d-e;
+      if c ne 0 then 
+        specials join:= {[1,a,b,c,d,e,f]}; 
+      end if;
+    end for;
+
+    // e := a*d, 1 = a*f
+    // e := a*d, c := -(1/a + a + b + d + e + 1);
+    for a, b, d in Kstar do
+      e := a*d;
+      c := -(1/a + a + b + d + e + 1);
+      f := -1-a-b-c-d-e;
+      if c ne 0 then 
+        specials join:= {[1,a,b,c,d,e,f]}; 
+      end if;
+    end for;
+
+    // f := a*e, 1 = a*f
+    // -1-a-b-c-d-e = a*e         1 = -a*(1+a+b+c+d+e)    1 = a^2*e
+    // so e = 1/a^2 and....
+    // -1-a-b-c-d-e = 1/a    d := -1/a -1-a-b-c-1/a^2
+    for a, b, c in Kstar do
+      d := -1/a -1-a-b-c-1/a^2;
+      e := 1/a^2;
+      f := -1-a-b-c-d-e;
+      if d ne 0 and f ne 0 then 
+        specials join:= {[1,a,b,c,d,e,f]}; 
+      end if;
+    end for;
+
+
+    
+    
+    if 1 eq q mod 7 then
+      zeta := Roots(x^6 + x^5 + x^4 + x^3 + x^2 + x + 1)[1][1];
+      veryspecials := [[a^i : i in [0..6]] : a in [zeta^j : j in [1..4]]];
+      specials := {a : a in specials | not a in veryspecials};
+    end if;
+    
+    for s in specials do
+      o, a, b, c, d, e, f := Explode(s);
+      if s lt [1, b/a, c/a, d/a, e/a, f/a, 1/a] and
+         s lt [1, c/b, d/b, e/b, f/b, 1/b, a/b] and
+         s lt [1, d/c, e/c, f/c, 1/c, a/c, b/c] and
+         s lt [1, e/d, f/d, 1/d, a/d, b/d, c/d] and
+         s lt [1, f/e, 1/e, a/e, b/e, c/e, d/e] and
+         s lt [1, 1/f, a/f, b/f, c/f, d/f, e/f] then
+        list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];  
+      end if;
+    end for;
+
+        
+
+
+    // Vectors with one zero.
+    
+    for a,b,c,d in Kstar do
+      e := -1-a-b-c-d;
+      if e ne 0 then
+        list cat:= [Vector(7,[L!0,1,a,b,c,d,e])];
+      end if;
+    end for;
+       
+    // Vectors with two zeroes.
+    
+    for a,b,c in Kstar do
+      d := -1-a-b-c;
+      if d ne 0 then
+        list cat:= [Vector(7,[L!0,0,1,a,b,c,d])];
+        list cat:= [Vector(7,[L!0,1,0,a,b,c,d])];
+        list cat:= [Vector(7,[L!0,1,a,0,b,c,d])];
+      end if;
+    end for;
+
+    // Vectors with three zeroes.
+
+    for a,b in Kstar do
+      c := -1-a-b;
+      if c ne 0 then
+        list cat:= [Vector(7,[L!0,0,0,1,a,b,c])];
+        list cat:= [Vector(7,[L!0,0,1,0,a,b,c])]; 
+        list cat:= [Vector(7,[L!0,0,1,a,0,b,c])]; 
+        list cat:= [Vector(7,[L!0,0,1,a,b,0,c])]; 
+        list cat:= [Vector(7,[L!0,1,0,a,0,b,c])];
+      end if;
+    end for;
+
+    // Vectors with four zeroes.
+
+    for a in Kstar do
+      b := -1-a;
+      if b ne 0 then
+        list cat:= [Vector(7,[L!0,0,0,0,1,a,b])];
+        list cat:= [Vector(7,[L!0,0,0,1,0,a,b])];
+        list cat:= [Vector(7,[L!0,0,0,1,a,0,b])];
+        list cat:= [Vector(7,[L!0,0,1,0,0,a,b])];
+        list cat:= [Vector(7,[L!0,0,1,0,a,0,b])];
+      end if;
+    end for;
+
+    // Vectors with five zeroes.
+    list cat:= [Vector(7,[L!0,0,0,0,0,1,-1])];
+    list cat:= [Vector(7,[L!0,0,0,0,1,0,-1])];
+    list cat:= [Vector(7,[L!0,0,0,1,0,0,-1])];
+
+
+
+
+    avec := Vector([a1,a2,a3,a4,a5,a6,a7]);
+    
+    for v in list do
+      polys71 cat:= [<MinimalPolynomial(InnerProduct(v,avec),K),1,[I]>];
+    end for;
+
+    if 1 eq q mod 7 then
+      if 0 eq ((q-1) div (p-1)) mod 7 then
+        a := PrimitiveElement(K);
+      else
+        a := K!PrimitiveElement(GF(p));
+      end if;
+
+      zeta := Roots(x^6 + x^5 + x^4 + x^3 + x^2 + x + 1)[1][1];
+      Z := Matrix(2,[zeta,0,0,1]);
+      for i in [1..6] do
+        polys51 cat:= [<x^7 - a^i,7,[Z^i : i in [0..6]]>];
+      end for;
+    end if;
+    
+  end if;
+
+  
+
+  assert &+[1/m[2] : m in polys71] eq (q + 1)*(q^2 - q + 1)*(q^2 + q + 1)/7;
+  return polys71;
+end function;
+
+//------------------------------------------------------------------------------
+
+function eightpoints8(K)
+  L := ext<K|2>;
+  nsK := nonsquare(K);
+  nsL := nonsquare(L);
+  L4 := ext<L|4>;
+  R<x>:=PolynomialRing(K);
+  S<y>:=PolynomialRing(L);
+  q := #K;
+  quartics := quarticrepsquad(K);
+  temp := PGL2reps(K,L);
+  // The quartics will have an involution I, which is either x --> 1/x or
+  // x --> ns/x. We would like to have representatives for PSL(2,q)\PSL(2,q^2)/<I>.
+  // So for each element X of PGL2reps we compute the rep Y of X*I, and only
+  // keep track of the X with X le Y.
+  
+  PGLreps := [];
+  for M in temp do
+    PGLreps cat:= [PGLreduce(M)];
+  end for;
+
+  oneoverx := Matrix(2,[L|0,1,1,0]);
+  nsoverx := Matrix(2,[L|0,nsL,1,0]);
+  PGLupto1 := [];
+  PGLuptons := [];
+  for M in PGLreps do
+    M1 := PGL2reduce(M*oneoverx,K,L,nsK);
+    if M le M1 then PGLupto1 cat:= [M]; end if;
+    Mns := PGL2reduce(M*nsoverx,K,L,nsK);
+    if M le Mns then PGLuptons cat:= [M]; end if;
+  end for;
+  
+  idK := Matrix(2,[K|1,0,0,1]);
+  
+  octiclist := [];
+  for d4 in quartics do
+    // d4[1] is the quartic. d4[2] is the numerator of the involution.
+    invd := Numerator(y^4*Evaluate(d4[1],d4[2]/y));
+    invd := invd / Coefficient(invd,4);
+    assert invd eq d4[1];
+    alpha := Roots(d4[1],L4)[1][1];
+    
+    case d4[2]:
+      when 1:
+        for P in PGLupto1 do
+          beta := (P[1,1]*alpha + P[1,2])/(P[2,1]*alpha + P[2,2]);
+
+          auts := [idK];
+          involution := PGLreduce(P*oneoverx*P^-1);
+          if &and[a in K : a in Eltseq(involution)] then
+            inv := Matrix(2,[K!a : a in Eltseq(involution)]);
+            auts cat:= [inv];
+          end if;
+
+
+          octiclist cat:= [<MinimalPolynomial(beta,K),#auts,auts>];
+        end for;
+      when nsL:
+        for P in PGLuptons do
+          beta := (P[1,1]*alpha + P[1,2])/(P[2,1]*alpha + P[2,2]);
+          
+          auts := [idK];
+          involution := PGLreduce(P*nsoverx*P^-1);
+          if &and[a in K : a in Eltseq(involution)] then
+            inv := Matrix(2,[K!a : a in Eltseq(involution)]);
+            auts cat:= [inv];
+          end if;
+          
+          octiclist cat:= [<MinimalPolynomial(beta,K),#auts,auts>];
+        end for;
+      else
+        error "Involution not one of the assumed forms.";
+    end case;
+  end for;
+  
+  // Now we deal with the j = 0 quartic.
+  deg4 := y^4 - nsL;
+  alpha := Roots(deg4,L4)[1][1];
+  zeta4 := Roots(x^2 + 1,L)[1][1];
+  
+  // List the elements of PGL2(L) that take roots of deg4 to themselves
+  // or to the roots of the conjugate quartic y^4 - nsL^q.
+  auts := [Matrix(2,[zeta4^i,0,0,1]) : i in [1..3]];
+  case q mod 4:
+    when 1:
+      r := nsL^((q-1) div 4);
+      semiauts := [Matrix(2,[zeta4^i*r,0,0,1]) : i in [0..3]];
+    when 3:
+      r := nsL^((q+1) div 4);
+      semiauts := [Matrix(2,[0, zeta4^i*r, 1, 0]) : i in [0..3]];
+  end case;
+  
+  for P in PGLreps do
+    good := true;
+    for M in auts do
+      N := PGL2reduce(P*M,K,L,nsK);
+      if N gt P then
+        good := false;
+        break M;
+      end if;
+    end for;
+
+    if good then
+      Psigma := Matrix(2,[a^q : a in Eltseq(P)]);
+      for M in semiauts do
+        N := PGL2reduce(Psigma*M,K,L,nsK);
+        if N gt P then
+          good := false;
+          break M;
+        end if;
+      end for;
+    
+      if good then 
+        beta := (P[1,1]*alpha + P[1,2])/(P[2,1]*alpha + P[2,2]);
+        // Let's just calculate the automorphism group from scratch.
+        
+        a1 := beta;
+        a2 := a1^q;
+        a3 := a2^q;
+        a4 := a3^q;
+        a5 := a4^q;
+        a6 := a5^q;
+        a7 := a6^q;
+        a8 := a7^q;
+        
+        M1 := Matrix(2,[a1*(a3-a2), a2*(a1-a3), (a3-a2), (a1-a3)]);
+  
+        autlist := [];
+  
+        for cs in [[a1,a2,a3],[a2,a3,a4],[a3,a4,a5],[a4,a5,a6],[a5,a6,a7],[a6,a7,a8],[a7,a8,a1],[a8,a1,a2]] do
+          c1, c2, c3 := Explode(cs);
+          M2 := Matrix(2,[c1*(c3-c2), c2*(c1-c3), (c3-c2), (c1-c3)]);
+          M := PGLreduce(M2*M1^-1);
+          eltsM := Eltseq(M);
+          if &and[m^q eq m : m in eltsM] then
+            autlist cat:= [Matrix(2,[K|m : m in eltsM])];
+          end if;
+        end for;
+
+        
+        octiclist cat:= [<MinimalPolynomial(beta,K),#autlist,autlist>];
+      end if;    
+    end if;
+  end for;
+  
+  assert q^3*(q^2+1)/8 eq &+[1/z[2] : z in octiclist];
+
+  return octiclist;
+end function;
+
+
+/*
+================================================================================
+Functions for getting all orbits of Sym^8.
+================================================================================
+*/
+
+function eightpoints(K);
+  // Return the union of the output of all the various eightpoints* functions.
+  biglist := eightpoints11111111(K);
+  biglist cat:= eightpoints2111111(K);
+  biglist cat:= eightpoints221111(K);
+  biglist cat:= eightpoints22211(K);
+  biglist cat:= eightpoints2222(K);
+  biglist cat:= eightpoints311111(K);
+  biglist cat:= eightpoints32111(K);
+  biglist cat:= eightpoints3221(K);
+  biglist cat:= eightpoints3311(K);
+  biglist cat:= eightpoints332(K);
+  biglist cat:= eightpoints41111(K);
+  biglist cat:= eightpoints4211(K);
+  biglist cat:= eightpoints422(K);
+  biglist cat:= eightpoints431(K);
+  biglist cat:= eightpoints44(K);
+  biglist cat:= eightpoints5111(K);
+  biglist cat:= eightpoints521(K);
+  biglist cat:= eightpoints53(K);
+  biglist cat:= eightpoints611(K);
+  biglist cat:= eightpoints62(K);
+  biglist cat:= eightpoints71(K);
+  biglist cat:= eightpoints8(K);
+  return biglist;
+end function;
+
+
