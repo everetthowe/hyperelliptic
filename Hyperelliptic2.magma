@@ -1,6 +1,6 @@
 // Genus2.magma
-// Version 1.0
-// 25 January 2024
+// Version 1.01
+// 12 February 2024
 
 // Everett W. Howe:
 // Enumerating hyperelliptic curves over finite fields in quasilinear time,
@@ -136,6 +136,10 @@ quickj4()       : Given a quadruple [a,b,c,d] of elements of a field K, return
 
 VERSION HISTORY:
 
+
+--------------------------------------------------------------------------------
+Version 1.01, 12 February 2024.
+Revised comments in betaorbitreps() to refer to a result in the paper.
 
 --------------------------------------------------------------------------------
 Version 1.0, 25 January 2024.
@@ -351,13 +355,12 @@ end function;
 //------------------------------------------------------------------------------
 
 function betaorbitreps(K,beta);
-  // K is a finite field, beta is a pure imaginary element of aquadratic 
+  // K is a finite field, beta is a pure imaginary element of a quadratic 
   // extension L of K. Let G be the subgroup of PGL(2,K) that fixes beta.
   // Compute orbit reps for the action of G on P^1(L). {beta} and {-beta} are
   // the two orbits of size less than #G; we do not return reps for these.
    
-  // The correctness of this algorith can be proven using techniques in the
-  // proof of Theorem 1.1 in the paper.
+  // Lemma 5.2 from the paper shows that this algorithm is correct.
 
   q := #K;
   L := Parent(beta);
