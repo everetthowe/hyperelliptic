@@ -1,6 +1,6 @@
-// Genus3.magma
-// Version 1.0
-// 25 January 2024
+// Hyperelliptic3.magma
+// Version 1.01
+// 11 March 2024
 
 // Everett W. Howe:
 // Enumerating hyperelliptic curves over finite fields in quasilinear time,
@@ -108,6 +108,17 @@ quarticrepsquad() :
 
 VERSION HISTORY:
 
+
+--------------------------------------------------------------------------------
+Version 1.01, 11 March 2024.
+Corrected error in fivepoints5(). For the degree-5 irreducible polynomials with
+nontrivial autormorphisms, the previous version gave incorrect matrices for the
+elements of PGL_2 that fix the polynomial. This did not affect the output of any
+of the eightpoints*() functions, because no automorphism of an irreducible 
+degree-5 factor of a separable degree-8 polynomial lifts to an automorphism of
+the full polynomial.
+
+Also edited some comments throughout the file.
 
 --------------------------------------------------------------------------------
 Version 1.0, 25 January 2024.
@@ -639,37 +650,82 @@ function fivepoints5(K);
 
     if Degree(jlist[j]) eq 5 then    
       shortlist cat:= [<biglist[j],1,[I]>];
-    else
-      // When the degree is 1, there are special forms...
-      case q mod 5:
-        when 1:
-          zeta := Roots(x^4 + x^3 + x^2 + x + 1,K)[1][1];
-          M := Matrix(2,[zeta,0,0,1]);
-          f := biglist[j];
-//          assert Coefficients(f) eq [Coefficient(f,0),0,0,0,0,1];
-          shortlist cat:= [<f, 5, [M^i : i in [0..4]]>];
-        when 0:
-          M := Matrix(2,[1,1,0,1]);
-          f := biglist[j];
-//          assert Coefficients(f) eq [Coefficient(f,0),-1,0,0,0,1];
-          shortlist cat:= [<f, 5, [M^i : i in [0..4]]>];
-        when 4:
-          phi := -1+Roots(jlist[j])[1][1];
-          assert phi^2 + phi - 1 eq 0;
-          M := Matrix(2,[0,phi-1,1,1]);
-          for a in K do
-            f := R![-5*phi + 3, (2*phi - 1)*a - 10*phi + 5, 2*phi*a + 10*phi - 10, 2*a + 10*phi - 10, a, 1];
-            if IsIrreducible(f) then break a; end if;
-          end for;
-          assert IsIrreducible(f);
-          shortlist cat:= [<f, 5, [M^i : i in [0..4]]>];
-        else:
-          assert false;
-      end case;
     end if;
       
     i := j+1;
   until i gt #jlist;    
+  
+  // Now we add in the special places with nontrivial automorphisms.
+  // There are at most 2 such. We add them in like this, instead of just using
+  // the procedure we used to get all the other elements of shortlist, so that
+  // we can specify that they are in a form in which the automorphisms are as
+  // visible as possible.
+  
+  case q mod 5:
+    when 1:
+      zeta := Roots(x^4 + x^3 + x^2 + x + 1,K)[1][1];
+      M := Matrix(2,[zeta,0,0,1]);
+
+      // Need an element of K that is not a 5th power. 
+      p,e := Explode(Factorization(q)[1]);
+      if 1 eq p mod 5 and 0 ne e mod 5 then 
+        g := K!PrimitiveElement(GF(p));
+      else
+        g := PrimitiveElement(K);
+      end if;        
+      zz := g^((q-1) div 5);
+
+      f := x^5 - g;
+      assert IsIrreducible(f);
+      assert cross(f) eq x + (zz^2 + zz^3);
+      shortlist cat:= [<f, 5, [M^i : i in [0..4]]>];
+      
+      f := x^5 - g^2;      
+      assert IsIrreducible(f);
+      assert cross(f) eq x + (zz + zz^4);
+      shortlist cat:= [<f, 5, [M^i : i in [0..4]]>];
+
+    when 0:
+      M := Matrix(2,[1,1,0,1]);
+      p,e := Explode(Factorization(q)[1]);
+
+      // Need an element of K with absolute trace 1.
+      if 0 ne e mod 5 then
+        t := K!1;
+      else
+        t0 := PrimitiveElement(K);
+        t := K!1;
+        repeat t *:= t0; until Trace(t,GF(p)) ne 0;
+      end if; 
+      t := t/Trace(t,GF(p));
+      
+      f := x^5 - x - t;
+      assert IsIrreducible(f);
+      assert cross(f) eq x - 3;
+      shortlist cat:= [<f, 5, [M^i : i in [0..4]]>];
+
+    when 4:
+      phi1 := Roots(x^2 + x - 1,K)[1][1];
+      M1 := Matrix(2,[0,phi1-1,1,1]);
+      for a in K do
+        f1 := R![-5*phi1 + 3, (2*phi1 - 1)*a - 10*phi1 + 5, 2*phi1*a + 10*phi1 - 10, 2*a + 10*phi1 - 10, a, 1];
+        if IsIrreducible(f1) then break a; end if;
+      end for;
+      assert Evaluate(f1,(phi1-1)/(x+1))*(x+1)^5 eq (3 - 5*phi1)*f1; // M1 is indeed an automorphism
+
+      phi2 := -1 - phi1;
+      M2 := Matrix(2,[0,phi2-1,1,1]);
+      for a in K do
+        f2 := R![-5*phi2 + 3, (2*phi2 - 1)*a - 10*phi2 + 5, 2*phi2*a + 10*phi2 - 10, 2*a + 10*phi2 - 10, a, 1];
+        if IsIrreducible(f2) then break a; end if;
+      end for;
+      assert Evaluate(f2,(phi2-1)/(x+1))*(x+1)^5 eq (3 - 5*phi2)*f2; // M2 is indeed an automorphism
+      
+      assert {cross(f1),cross(f2)} eq {x - (phi1+1), x - (phi2+1)};
+
+      shortlist cat:= [<f1, 5, [M1^i : i in [0..4]]>];
+      shortlist cat:= [<f2, 5, [M2^i : i in [0..4]]>];
+  end case;
   
   assert &+[1/m[2] : m in shortlist] eq (q^2+1)/5;
   
@@ -2672,7 +2728,6 @@ function eightpoints71(K);
         end if;
       end for;
     end for;
-// 24405039    
     
     // Continue to assume that a,b,c,d,e are distinct and different from 0 and 1.
     // But now go through special cases, assuming that *exactly one* holds.
@@ -2704,7 +2759,6 @@ function eightpoints71(K);
       end if;
     end for;
       
-//    24602570
     // c := a*(1 + b - a);      // 1st and 3rd equal
 
     for a in K01 do 
@@ -2731,9 +2785,7 @@ function eightpoints71(K);
         end if;
       end for;
     end for;
-    
-//    24910605
-    
+        
     //  d := a*c + b*(1-a);      // 1st and 4th equal
     
     for a in K01 do 
@@ -2760,8 +2812,6 @@ function eightpoints71(K);
         end if;
       end for;
     end for;
-    
-// 25215232
     
     //  e := a*d + c*(1-a);      // 1st and 5th equal
     
@@ -2790,7 +2840,6 @@ function eightpoints71(K);
       end for;
     end for;
 
-// 25520218
     //  e := d*(a-1)/a;          // 1st and 6th equal
 
     for a in K01 do 
@@ -2817,8 +2866,6 @@ function eightpoints71(K);
         end if;
       end for;
     end for;
-
-// 25823072
 
     //  e := 1/(1-a);            // 1st and 7th equal
 
@@ -2847,8 +2894,6 @@ function eightpoints71(K);
       end for;
     end for;
 
-
-// 26218884
 
 
 
@@ -3040,39 +3085,33 @@ function eightpoints71(K);
       end if;
     end for;
 
-// 26296097
 
     // Vectors of type 211111
     // [0, 0, 1, a, b, c, d]
     // [0, 1, 0, a, b, c, d]
     // [0, 1, a, 0, b, c, d]
+
     
     // Vectors of type 22111
 
     // [0, 0, 1, 1, a, b, c]
     // [0, 0, 1, a, b, c, 1]
     // [0, 1, 0, 1, a, b, c]
-
     // [0, 0, 1, a, b, 1, c]
     // [0, 0, 1, a, b, c, b]
     // [0, 1, 0, a, b, 1, c]
-
     // [0, 0, 1, a, a, b, c]
     // [0, 1, 0, a, b, c, a]
     // [0, a, 1, 0, b, c, 1]
-
     // [0, 0, 1, a, 1, b, c]
     // [0, 0, 1, a, b, c, a]
     // [0, 1, 0, a, 1, b, c]
-
     // [0, 0, 1, a, b, a, c]
     // [0, 1, 0, a, b, a, c]
     // [0, 1, a, 0, b, 1, c] 
-    
 
 
     // Vectors of type 2221
-    
     // [0, 1, 1, a, a, b, b]
     // [0, 1, 1, a, b, a, b]
     // [0, 1, 1, a, b, b, a]
@@ -3090,7 +3129,6 @@ function eightpoints71(K);
     // [0, 1, a, b, b, a, 1]
         
     
-    
     // Vectors of type 31111
     // [0, 0, 0, 1, a, b, c]
     // [0, 0, 1, 0, a, b, c]
@@ -3106,28 +3144,24 @@ function eightpoints71(K);
     // [0, 0, 0, 1, a, a, b]
     // [0, 0, 0, 1, a, b, a]
     // [0, 0, 0, 1, a, b, b]
-
     // [0, 0, 1, 0, 1, a, b]
     // [0, 0, 1, 0, a, 1, b]
     // [0, 0, 1, 0, a, b, 1]
     // [0, 0, 1, 0, a, a, b]
     // [0, 0, 1, 0, a, b, a]
     // [0, 0, 1, 0, a, b, b]
-
     // [0, 0, 1, 1, 0, a, b]
     // [0, 0, 1, a, 0, 1, b]
     // [0, 0, 1, a, 0, b, 1]
     // [0, 0, 1, a, 0, a, b]
     // [0, 0, 1, a, 0, b, a]
     // [0, 0, 1, a, 0, b, b]
-
     // [0, 0, 1, 1, a, 0, b]
     // [0, 0, 1, a, 1, 0, b]
     // [0, 0, 1, a, b, 0, 1]
     // [0, 0, 1, a, a, 0, b]
     // [0, 0, 1, a, b, 0, a]
     // [0, 0, 1, a, b, 0, b]
-
     // [0, 1, 0, 1, 0, a, b]
     // [0, 1, 0, a, 0, 1, b]
     // [0, 1, 0, a, 0, b, 1]
@@ -3135,25 +3169,20 @@ function eightpoints71(K);
     // [0, 1, 0, a, 0, b, a]
     // [0, 1, 0, a, 0, b, b]
     
-    
-    
+     
     // Vectors of type 322
     // [0, 0, 0, 1, 1, a, a]
     // [0, 0, 0, 1, a, 1, a]
     // [0, 0, 0, 1, a, a, 1]
-
     // [0, 0, 1, 0, 1, a, a]
     // [0, 0, 1, 0, a, 1, a]
     // [0, 0, 1, 0, a, a, 1]
-
     // [0, 0, 1, 1, 0, a, a]
     // [0, 0, 1, a, 0, 1, a]
     // [0, 0, 1, a, 0, a, 1]
-
     // [0, 0, 1, 1, a, 0, a]
     // [0, 0, 1, a, 1, 0, a]
     // [0, 0, 1, a, a, 0, 1]
-
     // [0, 1, 0, 1, 0, a, a]
     // [0, 1, 0, a, 0, 1, a]
     // [0, 1, 0, a, 0, a, 1]
@@ -3170,11 +3199,6 @@ function eightpoints71(K);
     // [0, 1, a, a, 1, 1, a]
     // [0, 1, a, a, 1, a, 1]
     // [0, 1, a, a, a, 1, 1]
-
-    
-
-
-
     
 
     // Vectors of type 4111
@@ -3185,25 +3209,19 @@ function eightpoints71(K);
     // [0, 0, 1, 0, a, 0, b]
     
     
-    
-    
     // Vectors of type 421
     // [0, 0, 0, 0, 1, 1, a]
     // [0, 0, 0, 0, 1, a, 1]
     // [0, 0, 0, 0, 1, a, a]
-
     // [0, 0, 0, 1, 0, 1, a]
     // [0, 0, 0, 1, 0, a, 1]
     // [0, 0, 0, 1, 0, a, a]
-
     // [0, 0, 0, 1, 1, 0, a]
     // [0, 0, 0, 1, a, 0, 1]
     // [0, 0, 0, 1, a, 0, a]
-
     // [0, 0, 1, 0, 0, 1, a]
     // [0, 0, 1, 0, 0, a, 1]
     // [0, 0, 1, 0, 0, a, a]
-
     // [0, 0, 1, 0, 1, 0, a]
     // [0, 0, 1, 0, a, 0, 1]
     // [0, 0, 1, 0, a, 0, a]
@@ -3216,19 +3234,23 @@ function eightpoints71(K);
     // [0, 0, 1, 0, 0, 1, 1]
     // [0, 0, 1, 0, 1, 0, 1]
 
+
     // Vectors of type 511
     // [0, 0, 0, 0, 0, 1, a]
     // [0, 0, 0, 0, 1, 0, a]
     // [0, 0, 0, 1, 0, 0, a]
     
+
     // Vectors of type 52
     // [0, 0, 0, 0, 0, 1, 1]
     // [0, 0, 0, 0, 1, 0, 1]
     // [0, 0, 0, 1, 0, 0, 1]
 
+
     // Vectors of type 61
     // [0, 0, 0, 0, 0, 0, 1]
     
+
     // Vectors of type 7 --- none. These correspond to elements of K.
 
 
@@ -3240,8 +3262,6 @@ function eightpoints71(K);
       end if;
     end for;
     
-//     39138377
-
     for a, b, c in K01 do
       if #{a,b,c} eq 3 then
         list cat:= [Vector(7,[L|0, 0, 1, 1, a, b, c]),
@@ -3266,8 +3286,6 @@ function eightpoints71(K);
                     Vector(7,[L|0, 1, 0, a, 0, b, c])];
       end if;
     end for;
-
-//    41084177
 
     for a, b in K01 do
       if #{a,b} eq 2 then
@@ -3324,8 +3342,6 @@ function eightpoints71(K);
       end if;
     end for;
 
-// 41192277
-
     for a in K01 do
       list cat:= [Vector(7,[L|0, 0, 0, 1, 1, a, a]),
                   Vector(7,[L|0, 0, 0, 1, a, 1, a]),
@@ -3372,8 +3388,6 @@ function eightpoints71(K);
                   Vector(7,[L|0, 1, a, a, a, 1, 1])];
     end for;
 
-// 41194298
-
     list cat:= [Vector(7,[L|0, 0, 0, 0, 1, 1, 1]),
                 Vector(7,[L|0, 0, 0, 1, 0, 1, 1]),
                 Vector(7,[L|0, 0, 0, 1, 1, 0, 1]),
@@ -3383,8 +3397,6 @@ function eightpoints71(K);
                 Vector(7,[L|0, 0, 0, 0, 1, 0, 1]),
                 Vector(7,[L|0, 0, 0, 1, 0, 0, 1]),
                 Vector(7,[L|0, 0, 0, 0, 0, 0, 1])];
-
-//    41194307
 
     avec := Vector([a1,a2,a3,a4,a5,a6,a7]);
     
@@ -3409,8 +3421,6 @@ function eightpoints71(K);
     
     
     /*
-
-
 
     Consider trace-0 elements. Basis for them (in terms of ai's):
     [1,0,0,0,0,0,-1]
@@ -3534,21 +3544,21 @@ function eightpoints71(K);
         if a lt b*ainv then
           binv := 1/b;
           c := a*b;
-              cinv := 1/c;
-              for d in Kstar do
-                if a lt d*cinv then
-                  dinv := 1/d;
-                  for e in Kstar do
-                    if a lt e*dinv then
-                      f := -a-b-c-d-e-1;
-                      if f ne 0 and a lt f/e and a lt 1/f
-                        and [b,   c,   d,   e,   f] lt [d/b, e/b, f/b, 1/b, a/b] then
-                        list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
-                      end if;
-                    end if;
-                  end for;
+          cinv := 1/c;
+          for d in Kstar do
+            if a lt d*cinv then
+              dinv := 1/d;
+              for e in Kstar do
+                if a lt e*dinv then
+                  f := -a-b-c-d-e-1;
+                  if f ne 0 and a lt f/e and a lt 1/f
+                    and [b,   c,   d,   e,   f] lt [d/b, e/b, f/b, 1/b, a/b] then
+                    list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
+                  end if;
                 end if;
               end for;
+            end if;
+          end for;
         end if;
       end for;
     end for;
@@ -3563,16 +3573,16 @@ function eightpoints71(K);
             if a lt c*binv then
               cinv := 1/c;
               d := a*c;
-                  dinv := 1/d;
-                  for e in Kstar do
-                    if a lt e*dinv then
-                      f := -a-b-c-d-e-1;
-                      if f ne 0 and a lt f/e and a lt 1/f 
-                        and [b,   c,   d,   e,   f] lt [e/c, f/c, 1/c, a/c, b/c] then
-                        list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
-                      end if;
-                    end if;
-                  end for;
+              dinv := 1/d;
+              for e in Kstar do
+                if a lt e*dinv then
+                  f := -a-b-c-d-e-1;
+                  if f ne 0 and a lt f/e and a lt 1/f 
+                    and [b,   c,   d,   e,   f] lt [e/c, f/c, 1/c, a/c, b/c] then
+                    list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
+                  end if;
+                end if;
+              end for;
             end if;
           end for;
         end if;
@@ -3592,11 +3602,11 @@ function eightpoints71(K);
                 if a lt d*cinv then
                   dinv := 1/d;
                   e := a*d;
-                      f := -a-b-c-d-e-1;
-                      if f ne 0 and a lt f/e and a lt 1/f 
-                        and [b,   c,   d,   e,   f] lt [f/d, 1/d, a/d, b/d, c/d] then
-                        list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
-                      end if;
+                  f := -a-b-c-d-e-1;
+                  if f ne 0 and a lt f/e and a lt 1/f 
+                    and [b,   c,   d,   e,   f] lt [f/d, 1/d, a/d, b/d, c/d] then
+                    list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
+                  end if;
                 end if;
               end for;
             end if;
@@ -3618,11 +3628,11 @@ function eightpoints71(K);
               for e in Kstar do
                 d := -a-b-c-e-1-a*e;
                 if d ne 0 and a lt d*cinv and a lt e/d then
-                      f := -a-b-c-d-e-1;
-                      if f ne 0 and a lt 1/f 
-                      and [b,   c,   d,   e,   f] lt [1/e, a/e, b/e, c/e, d/e] then
-                        list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
-                      end if;
+                  f := -a-b-c-d-e-1;
+                  if f ne 0 and a lt 1/f 
+                  and [b,   c,   d,   e,   f] lt [1/e, a/e, b/e, c/e, d/e] then
+                    list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
+                  end if;
                 end if;
               end for;
             end if;
@@ -3647,13 +3657,13 @@ function eightpoints71(K);
                 if a lt d*cinv then
                   dinv := 1/d;
                   e := -(ainv + a + b + c + d + 1);
-                    if a lt e*dinv then
-                      f := -a-b-c-d-e-1;
-                      if f ne 0 and a lt f/e 
-                      and [b,   c,   d,   e,   f] lt [a/f, b/f, c/f, d/f, e/f] then
-                        list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
-                      end if;
+                  if a lt e*dinv then
+                    f := -a-b-c-d-e-1;
+                    if f ne 0 and a lt f/e 
+                    and [b,   c,   d,   e,   f] lt [a/f, b/f, c/f, d/f, e/f] then
+                      list cat:= [Vector(7,[L!1,a,b,c,d,e,f])];
                     end if;
+                  end if;
                 end if;
               end for;
             end if;
@@ -3859,8 +3869,6 @@ function eightpoints71(K);
     end for;
 
 
-    
-    
     if 1 eq q mod 7 then
       zeta := Roots(x^6 + x^5 + x^4 + x^3 + x^2 + x + 1)[1][1];
       veryspecials := [[a^i : i in [0..6]] : a in [zeta^j : j in [1..4]]];
@@ -3879,7 +3887,6 @@ function eightpoints71(K);
       end if;
     end for;
 
-        
 
 
     // Vectors with one zero.
@@ -3932,7 +3939,6 @@ function eightpoints71(K);
     list cat:= [Vector(7,[L!0,0,0,0,0,1,-1])];
     list cat:= [Vector(7,[L!0,0,0,0,1,0,-1])];
     list cat:= [Vector(7,[L!0,0,0,1,0,0,-1])];
-
 
 
 
