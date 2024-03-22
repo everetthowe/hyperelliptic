@@ -1,6 +1,6 @@
-// Genus2.magma
-// Version 1.01
-// 12 February 2024
+// Hyperelliptic2.magma
+// Version 1.02
+// 11 March 2024
 
 // Everett W. Howe:
 // Enumerating hyperelliptic curves over finite fields in quasilinear time,
@@ -136,6 +136,10 @@ quickj4()       : Given a quadruple [a,b,c,d] of elements of a field K, return
 
 VERSION HISTORY:
 
+
+--------------------------------------------------------------------------------
+Version 1.02, 11 March 2024.
+Edited some comments.
 
 --------------------------------------------------------------------------------
 Version 1.01, 12 February 2024.
@@ -860,7 +864,7 @@ end function;
 //------------------------------------------------------------------------------
 
 function PGLorder(M)
-  // given a matrix M in GL(2,K),
+  // Given a matrix M in GL(2,K),
   // determine its order in PGL,
   // on the assumption that the order is 1, 2, 3, 5, or 6
   if M[1,1] eq M[2,2] and M[1,2] eq 0 and M[2,1] eq 0 then return 1; end if;
@@ -3326,7 +3330,6 @@ d := -1 - a - b - c
 
 
 
-
 b = a^2    d = a*c
 
 -1 - a - a^2 - c = a*c
@@ -3348,8 +3351,6 @@ c := -1 -a - a^2 - d
 
 
 
-
-
 c = a*b    d = a*c
 
 -1-a-b-a*b = a*a*b
@@ -3361,8 +3362,6 @@ d := -1-a-b-c;
 
 
 
-
-
 c = a*b     1 = a*d
 
 1 = a*(-1-a-b-a*b)
@@ -3371,7 +3370,6 @@ b + 1 = -1/(a^2 + a)
 b = -(a^2 + a + 1)/(a^2 + a)
 c := a*b;
 d := -1-a-b-c;
-
 
 
 
@@ -3891,4 +3889,3 @@ function curves_nomem(flist)
   
   return true;
 end function;
-
