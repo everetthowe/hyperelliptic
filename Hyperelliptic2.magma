@@ -1,6 +1,6 @@
 // Hyperelliptic2.magma
-// Version 1.02
-// 11 March 2024
+// Version 1.03
+// 20 December 2024
 
 // Everett W. Howe:
 // Enumerating hyperelliptic curves over finite fields in quasilinear time,
@@ -135,6 +135,16 @@ quickj4()       : Given a quadruple [a,b,c,d] of elements of a field K, return
 ================================================================================
 
 VERSION HISTORY:
+
+
+--------------------------------------------------------------------------------
+Version 1.03, 20 December 2024.
+Fixed a serious error in the function fourpoints31. The earlier version gave 
+incorrect results when run on certain fields K containing cube roots of 1. The
+error does not affect any of the computations involved in enumerating 
+hyperelliptic curves of genus 2, because fourpoints31 is not used in any of 
+these computations. It *does* affect the computations that enumerate
+hyperelliptic curves of genus 3 using the programs in Hyperelliptic3.magma.
 
 
 --------------------------------------------------------------------------------
@@ -1645,11 +1655,7 @@ function fourpoints31(K);
       A1 := Matrix(2,[zeta,0,0,1]);
       A2 := Matrix(2,[zeta^2,0,0,1]);
       p,e := Explode(Factorization(q)[1]);
-      if 0 eq e mod 3 then
-        noncube := K!2;
-      else
-        noncube := K.1;
-      end if;
+      noncube := PrimitiveElement(K);
       polys31 cat:= [<x^3 - noncube,   3, [I,A1,A2]>,
                      <x^3 - noncube^2, 3, [I,A1,A2]>];
     end if;
