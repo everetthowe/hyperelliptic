@@ -1,84 +1,130 @@
 // Hyperelliptic2.magma
-// Version 1.03
-// 20 December 2024
+// Version 2.00
+// 8 June 2025
 
+// Code related to two papers:
+
+// [Howe2025]
 // Everett W. Howe:
 // Enumerating hyperelliptic curves over finite fields in quasilinear time,
-// preprint.
+// Res. number theory 11, 26 (2025). Proceedings of ANTS XVI.
+// https://doi.org/10.1007/s40993-024-00594-7
+
+// [Howe2024]
+// Everett W. Howe:
+// Enumerating places of P1 up to automorpshisms of P1 in quasilinear time,
+// arXiv:2407.05534 [math.NT]
+// https://doi.org/10.48550/arXiv.2407.05534
+
+
 
 /* 
 ================================================================================
 This collection of Magma routines is designed to produce a list of all genus-2
-curves over a given finite field of odd characteristic, up to isomorphism. It
-includes routines to compute a complete set of unique representatives for the 
-orbits of PGL_2(F_q) acting on monic quintic and sextic polynomials of a given
-"Galois type," as defined in the paper. These routines also return the
-PGL_2(F_q) stabilizers of the polynomials it returns. From this information it 
-is straightforward to find the one or two hyperelliptic curves associated to the
-polynomials, as well as their automorphism groups.
+curves over a given finite field of odd characteristic, up to isomorphism. The 
+strategy is to compute a complete set of unique representatives for the orbits
+of PGL(2,F_q) acting on monic homogeneous separable sextic polynomials of a
+given "Galois type," as defined in [Howe2025], and then producing the one or two
+distinct double covers of P^1 ramified at the roots of the given polynomials.
 
-The programs for computing representatives of the PGL_2 orbits of polynomials
-with a given Galois type are named for their Galois types:
+The routines in this file have been completely rewritten since the first 
+version. Some of the changes are to incorporate ideas from [Howe2024], and one
+of the goals of this version is to reduce the memory requirements of the 
+routines to O(q). This will be the case if one chooses to have the output
+printed instead of returned in a variable.
 
-sixpoints111111()
-sixpoints21111()
-sixpoints2211()
-sixpoints222()
-sixpoints3111()
-sixpoints321()
-sixpoints33()
-sixpoints411()
-sixpoints42()
-sixpoints51()
-sixpoints6()
+We group the Galois types by the largest degree they include, and compute all
+of the genus-2 hyperelliptic curves for each of these grouping of Galois types.
+The programs for computing the curves are named for the types in the grouping:
 
-We also have a combined function that runs all of the above and collects the
-output:
+genustwo1x()
+genustwo2x()
+genustwo3x()
+genustwo4x()
+genustwo51()
+genustwo6()
 
-sixpoints()
+We also have a combined function that runs all of the above:
 
-We also will need (here and/or in other collections of programs) to have orbit
-representatives for the action of PGL_2(F_q) on the monic quartic and cubic 
-polynomials of given Galois types:
+hyperelliptic2()
 
-fourpoints1111()
-fourpoints211()
-fourpoints22()
-fourpoints31()
-fourpoints4()
+If one is interested not in the curves but rather in the orbits of Galois-stable
+sets of six elements of P^1 over the algebraic closure, one can set the
+optional parameter "curves" of these functions to "false".
 
-Once we have a list of monic quintic and sextic polynomials, produce the list
-of genus-2 curves associated to those polynomails.
+If one does not want the output of the functions returned in a variable, one 
+can set the optional paramater "passback" to "false".
 
-curves()
+If one wants the output to be printed, one can set the optional parameter
+"output" to "true". And if one wants the output printed to a file instead of
+to standard out, one can set the optional paameter "outputfile" to the name
+of the desired file.
+
+When the output is returned in a variable, each element of it is a triple
+<f, n, G>, where f is a polynomial, G is a finite subgroup of PGL(2,GF(q))
+specified by its elements represented by matrices, and n is either #G or 
+twice #G (as explained below). When the output represents a Galois-stable set
+of elements of P^1, G is the stabilizer of this set in PGL(2,GF(q)) and n = #G.
+When the output represents a curve, G is the image in PGL(2,GF(q)) of the
+automorphism group of the curve, and n is twice the order of G, so that n is 
+the order of the automorphism group of the curves.
+
+When output is printed instead of returned in a variable, the elements are 
+shortened. The polynomial f is represented by its sequence of coefficients as
+given by Eltseq(f), and the group G is not listed. 
 
 
-There are also quite a few utility functions:
+This file also includes many utility functions needed by the main programs:
 
-automorphisms1111() : 
-                  Given a set of four points in P^1(K), compute the PGL_2(K)
-                  stabilizer of the set.
+function IsFrobeniusFunction(F,f)
+function isomorphisms222(F,f: all:=true)
+function j_quartic(g)
+function mapsbetweenpairsofquadratics(pair1,pair2)
+function mu_invariant(q1, q2)
+function nonsquare(K)
+function quarticLFTs(f,g)
+function quickj4(quadruple)
+
 
 automorphisms111111() : 
-                  Given a set of six points in P^1(K), compute the PGL_2(K) 
+                  Given a set of six points in P^1(K), compute the PGL(2,K) 
                   stabilizer of the set.
                       
 betaorbitreps() : Given a finite field K of odd characteristic and an element
                   beta of the quadratic extension L of K with beta^2 in K,
-                  let G be the subgroup of PGL_2(K) that fixes the set
+                  let G be the subgroup of PGL(2,K) that fixes the set
                   {beta, -beta}. Returns orbit representatives for G acting on
-                  P^1(K) \ {beta, -beta}.
+                  P^1(L) \ {beta, -beta}.
                   
-crossratio()    : Computes the cross ratio of four elements of a field.
+cross()         : Given an irreducible f, compute its cross polynomial, as 
+                  defined in [Howe2025]. 
+                  
+curves_from_divisor() :
+                  Given a separable polynomial of degree 2g+1 and 2g+2 over a
+                  finite field K of odd characteristic, together with the set
+                  of elements of PGL(2,K) that map its set of roots to itself,
+                  produce the one or two curves (and automorphism groups) with
+                  these roots as Weierstrass points. 
 
-fourlinearreps() :
-                  The same as fourpoints1111, except that the representatives
-                  are chosen so that the involutions of the four points are
-                  normalized.
+fourpoints1111() : 
+                  Given a finite field K of odd characteristic, return PGL(2,K)
+                  orbit representatives for the sets of four distinct rational
+                  points of P^1. Choose the representatives so that the 
+                  involutions of the four points are normalized to standard
+                  ones.
                    
-irreducible2()  : Given a finite field, produces a "standard" irreducible 
-                  quadratic of the form x^2 + b.
-                  
+fourpoints22()  : Given a finite field K of odd characteristic, return
+                  representatives for the PGL(2,K) orbits of pairs of pairs of
+                  two conjugate elements of P^1. Choose the representatives so
+                  that the involutions of the pairs are normalized to standard
+                  ones.
+
+fourpoints4()   : Given a finite field K of odd characteristic, return
+                  representatives for the PGL(2,K) orbits of sets of four 
+                  conjugate elements of P^1. Choose the representatives so that
+                  the involution of the four points is normalized to one of two
+                  standard ones.
+
 irreducible3()  : Given a finite field, produces a "standard" irreducible 
                   cubic of the form x^3 + s*x^2 - (s+3)*x + 1.
                   
@@ -86,13 +132,8 @@ isomorphisms222() :
                   Given two sextic polynomials f and F over a finite field K,
                   each of them a product of three irreducible quadratics, 
                   return true or false depending on whether there is an 
-                  element of PGL_2(K) taking one to the other.
-                    
-is_smaller()    : Given two triples of elements of a finite field K of odd
-                  characteristic, check to see whether the first triple is 
-                  smaller (under the default ordering) to various images of
-                  the second triple.
-                   
+                  element of PGL(2,K) taking one to the other.
+                                       
 j_quartic()     : Gives the j-invariants of the Jacobian of y^2 = f, for 
                   separable quartics and cubics f.
 
@@ -106,20 +147,13 @@ mu_invariant()  : Computes an invariant (defined in the paper) for pairs
 nonsquare()     : Given a finite field, produces a nonsquare elemets, chosen
                   from the prime field if possible.
 
-PGL2reps()      : Given a finite field K of odd characteristic and a quadratic
+GL2reps()      : Given a finite field K of odd characteristic and a quadratic
                   extension L of K, returns orbit representatives for the left
-                  action of PGL_2(K) on PGL_2(L).
-                  
-PGLorder()      : Given a 2x2 matrix representing an element of PGL_2(F_q),
-                  returns the order of the element.
-                  
-PGLreduce()     : Given a 2x2 matrix representing an element of PGL_2(F_q),
+                  action of PGL(2,K) on PGL(2,L).
+                                    
+PGLreduce()     : Given a 2x2 matrix representing an element of PGL(2,F_q),
                   returns another matrix representing the same element, with 
                   bottom row either [1 0] or [0 1].
-
-quadraticreps() : Given a finite field K of odd characteristic and some other
-                  information, returns certain quadratic polynomials. See the
-                  comments in the function definition for more details.
                   
 quarticLFTs()   : Given two separable polynomials of degree 3 or 4 over a finite
                   field K of odd characteristic, return the set of linear 
@@ -136,6 +170,22 @@ quickj4()       : Given a quadruple [a,b,c,d] of elements of a field K, return
 
 VERSION HISTORY:
 
+Version 2.00, 8 June 2025.
+
+Completely rewritten. The old "sixpoints" functions have been replaced by the
+"genustwo" functions. Also, if the functions are called with the "passback"
+flag set to false, the memory usage of the programs will be bounded by O(q).
+
+Updated mu_invariant so that it matches the definition in the paper. (The
+previous versions of the function computed an affine shift of the function
+defined in the paper.) Also modified so that one argument can be a linear
+polynomial instead of a quadratic.
+
+Removed some functions that produced PGL2 orbit representatives for degree-4
+divisors of certain Galois types. All that is needed for our genus-2 algorithm
+are Galois types (2,2) and (4). 
+
+
 
 --------------------------------------------------------------------------------
 Version 1.03, 20 December 2024.
@@ -145,7 +195,6 @@ error does not affect any of the computations involved in enumerating
 hyperelliptic curves of genus 2, because fourpoints31 is not used in any of 
 these computations. It *does* affect the computations that enumerate
 hyperelliptic curves of genus 3 using the programs in Hyperelliptic3.magma.
-
 
 --------------------------------------------------------------------------------
 Version 1.02, 11 March 2024.
@@ -161,19 +210,8 @@ First released version. Revision/cleanup/simplification of initial code.
 
 
 
---------------------------------------------------------------------------------
-
-To do: 
-
-* Go through and check comments for thoroughness and accuracy.
-* Make sure we are using mu_invariant where it will be helpful.
-
 ================================================================================
 */
-
-
-// NOTE: Throughout we assume we are working over fields of characteristic > 2.
-
 
 
 /*
@@ -185,6 +223,7 @@ Forward definitions.
 forward j_quartic;
 forward mu_invariant;
 forward nonsquare;
+forward PGLreduce;
 forward quarticLFTs;
 forward quickj4;
 
@@ -194,67 +233,6 @@ Utility functions.
 ================================================================================
 */
 
-function automorphisms1111(aa)
-  // Compute the elements of PGL_2 that stabilize the set {oo, 0, 1, aa}.
-
-  K := Parent(aa);
-  q := #K;
-  
-  I := Matrix(2,[K|1,0,0,1]);
-  
-  r := [0, 1, aa];
-
-  r12 := 1;
-  r13 := aa^2;
-  r23 := (aa-1)^2;
-
-  // The list of linear fractional transformations that we will return:
-  lfts := [];
-
-  // The ramification points of y^2 = x*(x-1)*(x-aa), as elements of P^1:
-  rootsf := [[1,0], [0,1], [1,1], [aa,1]]; 
-  a, b, c, d := Explode(rootsf);
-
-  for i,j,k in [1..4] do 
-    if #{i,j,k} eq 3 then
-      A := rootsf[i];
-      B := rootsf[j];
-      C := rootsf[k];
-      // Find r,s,t,u such that (r*x + s)/(t*x + u) sends a to A, b to B, c to C
-          
-      M := Matrix(3,4,[a[1]*A[2],a[2]*A[2],-a[1]*A[1],-a[2]*A[1],
-                       b[1]*B[2],b[2]*B[2],-b[1]*B[1],-b[2]*B[1],
-                       c[1]*C[2],c[2]*C[2],-c[1]*C[1],-c[2]*C[1] ]);
-      BB := Basis(Nullspace(Transpose(M)))[1];
-      r := BB[1];
-      s := BB[2];
-      t := BB[3];
-      u := BB[4];
-          
-      imaged := [r*d[1] + s*d[2], t*d[1] + u*d[2]];
-      if imaged[2] ne 0 then 
-        imaged := [imaged[1]/imaged[2],1]; 
-      else 
-        imaged := [K!1,0]; end if;
-      if imaged in rootsf then lfts cat:= [[r,s,t,u]]; end if;
-    end if;
-  end for;
-  
-  // Put the elements of lfts in standard form.
-
-  standardLFTs := [];
-  for z in lfts do
-    if z[3] ne 0 then
-      standardLFTs cat:= [ [K!(z[1]/z[3]), K!(z[2]/z[3]), K!1, K!(z[4]/z[3])] ];
-    else
-      standardLFTs cat:= [ [K!(z[1]/z[4]), K!(z[2]/z[4]), K!0, K!1] ];
-    end if;
-  end for;
-  standardLFTs := Sort([a : a in Set(standardLFTs)]);
-  return [Matrix(2,L) : L in standardLFTs];
-end function;
-
-//------------------------------------------------------------------------------
 
 function automorphisms111111(aa,bb,cc)
   // Compute the elements of PGL_2 that stabilize the set {oo, 0, 1, aa, bb, cc}.
@@ -352,17 +330,9 @@ function automorphisms111111(aa,bb,cc)
   end for;
   
   // Put the automorphisms into standard form.
+  
+  return Sort([PGLreduce(Matrix(2,L)) : L in lfts]);
 
-  standardLFTs := [];
-  for z in lfts do
-    if z[3] ne 0 then
-      standardLFTs cat:= [ [K!(z[1]/z[3]), K!(z[2]/z[3]), K!1, K!(z[4]/z[3])] ];
-    else
-      standardLFTs cat:= [ [K!(z[1]/z[4]), K!(z[2]/z[4]), K!0, K!1] ];
-    end if;
-  end for;
-  standardLFTs := Sort([a : a in Set(standardLFTs)]);
-  return [Matrix(2,L) : L in standardLFTs];
 end function;
  
 
@@ -374,7 +344,7 @@ function betaorbitreps(K,beta);
   // Compute orbit reps for the action of G on P^1(L). {beta} and {-beta} are
   // the two orbits of size less than #G; we do not return reps for these.
    
-  // Lemma 5.2 from the paper shows that this algorithm is correct.
+  // Lemma 5.2 from [Howe2025] shows that this algorithm is correct.
 
   q := #K;
   L := Parent(beta);
@@ -385,203 +355,73 @@ end function;
 
 //------------------------------------------------------------------------------
 
-function crossratio(r,s,t,u)
-  // Move these points to oo, 0, 1, and v for some v. Return v.
-  // We assume these are elements of K, not of P^1(K).
-  return (u-s)*(t-r)/((u-r)*(t-s));
+function cross(f)
+  // Given an irreducible f, compute its cross polynomial, as defined 
+  // in [Howe2025]. 
+  K := BaseRing(Parent(f));
+  q := #K;
+  L := ext<K|Degree(f)>;
+  S<y>:=PolynomialRing(L);  
+  alpha1 := Roots(f,L)[1][1];
+  alpha2 := alpha1^q;
+  alpha3 := alpha2^q;
+  alpha4 := alpha3^q;
+  j := (alpha4-alpha2)*(alpha3-alpha1) / (alpha4-alpha1) / (alpha3-alpha2);
+  return CharacteristicPolynomial(j,K);
 end function;
-
+ 
 //------------------------------------------------------------------------------
 
 
-function fourlinearreps(K)
-  // Given a finite field K of odd characteristic, find representatives for
-  // the PGL(2,K) orbits of sets of four distinct elements of P^1(K).
-  // We represent such sets by monic separable polynomials of degree 3 or 4
-  // that factor as a product of distinct linears.
-  
-  // We normalize what the three fixed-point-free involutions of the set are by
-  // conjugating. If the fixed points of any of these involutions are rational,
-  // we normalize that involution to be x --> -x.
-  // Note that the fixed points are rational if and only if the
-  // negative determinant of the involution is a square.
-  // So if none of the involutions has rational fixed points, then -1 is not a 
-  // square, and all involutions have square determinants.
-  
-  // Need to work out what elements of PGL(2,K) permute these involutions.
-  // Certainly the involutions themselves... plus what else?
-  
-  // Note that there are (q+1) choose 4 sets of four distinct elements of P^1,
-  // and we are dividing out by PGL(2,K). That means that the sum, over our
-  // representatives, of 1 over the automorphism group of the representative
-  // should be equal to (q-2)/24.
-  
-  q := #K;
-  p,e := Explode(Factorization(q)[1]);
-  R<x>:=PolynomialRing(K);
+function curves_from_divisor(f,auts)
+  // Given a separable polynomial of degree 2g+1 and 2g+2 over a finite field
+  // K of odd characteristic, together with the set of elements of PGL(2,K)
+  // that map its set of roots to itself, produce the one or two curves (and
+  // automorphism groups) with these roots as Weierstrass points. 
+  R := Parent(f);
+  x := R.1;
+  K := BaseRing(R);
   ns := nonsquare(K);
-
-  list := [];
-  taken := [];
-  I := Matrix(2,[K|1,0,0,1]);
   
-  // Case 1: There is an involution with rational fixed points.
-  // Normalize it to x --> -x.
-  // If -1 is a square, then we get two cases:
-  // Second is x --> d/x and third is x --> -d/x, where d is a 1 or a nonsquare.
-  // If -1 is not a square, we get one case:
-  // Second is x --> 1/x and third is x --> -1/x.
-
-  // Case 2: No involution has a rational fixed point. In this case -1 is not
-  // a square, and we normalize first to be x --> -1/x.
-  // Second is then [a 1 1 -a] for some a with -1-a^2 equal to a square.
-  // Third is [-1/a 1 1 1/a]
+  degree := Degree(f);
+  if 1 eq degree mod 2 then degree +:=1; end if;
   
+  n := #auts;
 
-  if IsSquare(K!-1) then
-    // There is an involution with rational fixed points.
-    inv1 := Matrix(2,[-1,0,0,1]);
-    
-    // First case: They *all* have rational fixed points.
-    inv2 := Matrix(2,[0, 1,1,0]);
-    inv3 := Matrix(2,[0,-1,1,0]);
-    auts := [I,inv1,inv2,inv3];
-    
-    i := Sqrt(K!-1);
-    
-    // Orbits of size two: {oo,0} {1,-1}
-    for a in K do
-      if not a in {K|0,1,-1,i,-i} then
-        four := (x-a)*(x+a)*(x-1/a)*(x+1/a);
-        j := j_quartic(four);
-        if not j in taken then
-          taken cat:= [j];
-          if j in {K|0,1728} then
-            bigauts := quarticLFTs(four,four);
-            list cat:= [<four,#bigauts,bigauts>];
-          else          
-            list cat:= [<four,#auts,auts>];
-          end if;
-        end if;
-      end if;
-    end for;
-    
-    // Second case: The other two *do not* have rational fixed points.
-    inv2 := Matrix(2,[0, ns,1,0]);
-    inv3 := Matrix(2,[0,-ns,1,0]);
-    auts := [I,inv1,inv2,inv3];
-
-    // Orbits of size two: {oo,0}
-    for a in K do
-      if not a in {K|0} then
-        four := (x-a)*(x+a)*(x-ns/a)*(x+ns/a);
-        j := j_quartic(four);
-        if not j in taken then
-          taken cat:= [j];
-          if j in {K|0,1728} then
-            bigauts := quarticLFTs(four,four);
-            list cat:= [<four,#bigauts,bigauts>];
-          else          
-            list cat:= [<four,#auts,auts>];
-          end if;
-        end if;
-      end if;
-    end for;
-
+  if n eq 1 then        
+    // Could use "1 eq n mod 2" here, but Magma runs the code slightly faster 
+    // with the more restrictive condition.
+    curveauts := auts;
   else
-    // -1 is not a square.
-    
-    // First case: There is an involution with rational fixed points.
-    // In this case, there are two such, which we normalize to 
-    // x --> -x and x --> 1/x.
-
-    inv1 := Matrix(2,[K|-1,0,0,1]);
-    inv2 := Matrix(2,[K|0, 1,1,0]);
-    inv3 := Matrix(2,[K|0,-1,1,0]);
-    auts := [I,inv1,inv2,inv3];
-
-    // Orbits of size two: {oo,0} {1,-1}
-    for a in K do
-      if not a in {K|0,1,-1} then 
-        four := (x-a)*(x+a)*(x-1/a)*(x+1/a);
-        j := j_quartic(four);
-        if not j in taken then
-          taken cat:= [j];
-          if j in {K|0,1728} then
-            bigauts := quarticLFTs(four,four);
-            list cat:= [<four,#bigauts,bigauts>];
-          else          
-            list cat:= [<four,#auts,auts>];
-          end if;
-        end if;
-      end if;
-    end for;
-    
-    
-    // Second case: No involution has rational fixed points.
-    inv1 := Matrix(2,[K|0,-1,1,0]);
-    good := 0;
-    for a in PrimeField(K) do
-      if IsSquare(-1-a^2) then good := a; break a; end if;
-    end for;
-    if good eq 0 then
-      for a in K do
-        if IsSquare(-1-a^2) then good := a; break a; end if;
-      end for;
-    end if;
-    inv2 := Matrix(2,[good,1,1,-good]);
-    inv3 := Matrix(2,[-1/good,1,1,1/good]);
-    auts := [I,inv1,inv2,inv3];
-
-    // a, -1/a, (good*a + 1)/(a - good), (-a + good)/(good*a + 1)
-    // No orbits of size two.
-    // Orbit of oo: oo, 0, good, -1/good
-
-    four := x*(x-good)*(x+1/good);
-    j := j_quartic(four);
-    if not j in taken then
-      taken cat:= [j];
-      if j in {K|0,1728} then
-        bigauts := quarticLFTs(four,four);
-        list cat:= [<four,#bigauts,bigauts>];
-      else          
-        list cat:= [<four,#auts,auts>];
-      end if;
-    end if;
-
-
-    for a in K do
-      if not a in {0,good,-1/good} then
-        four := (x-a)*(x+1/a)*(x-(good*a+1)/(a-good))*(x-(-a+good)/(good*a+1));
-        j := j_quartic(four);
-        if not j in taken then
-          taken cat:= [j];
-          if j in {K|0,1728} then
-            bigauts := quarticLFTs(four,four);
-            list cat:= [<four,#bigauts,bigauts>];
-          else          
-            list cat:= [<four,#auts,auts>];
-          end if;
-        end if;
+    curveauts := [];
+    for A in auts do
+      num := A[1,1]*x + A[1,2];
+      den := A[2,1]*x + A[2,2];
+      g := Numerator(Evaluate(f,num/den)*den^degree);
+      lead := Coefficient(g,Degree(g));
+      if IsSquare(lead) then 
+        curveauts cat:= [A];
       end if;
     end for;
   end if;
-  
-  assert &+[1/r[2] : r in list] eq (q-2)/24;
-  
-  return list;
-end function;
+    
+  if #curveauts eq n then
+    // We have a nontrivial twist.
+    return [<   f, 2*n, curveauts>, 
+            <ns*f, 2*n, curveauts>];
+  else
+    return [<   f,   n, curveauts>];
+  end if;
 
-//------------------------------------------------------------------------------
-
-function irreducible2(K);
-  ns := nonsquare(K);
-  return PolynomialRing(K)![-ns,0,1];
 end function;
 
 //------------------------------------------------------------------------------
 
 function irreducible3(K);
+  // Return an irreducible polynomial of degree 3 over K whose roots are
+  // permuted by x --> 1/(1-x) and x --> (x-1)/x. If x^3 + s*x^2 - (s+3)*x + 1 
+  // is irreducible, it is such a polynomial. 
+  
   q := #K;
   pe := Factorization(q);
   p := pe[1][1];
@@ -591,8 +431,7 @@ function irreducible3(K);
     repeat s +:= 1;
     until IsIrreducible(PolynomialRing(K)![1,-s-3,s,1]);
   else
-    z := K.1;
-    assert Order(z) eq q-1;
+    z := PrimitiveElement(K);
     s := 1/z;
     repeat s*:=z;
     until IsIrreducible(PolynomialRing(K)![1,-s-3,s,1]);
@@ -680,29 +519,35 @@ end function;
     
 //------------------------------------------------------------------------------
 
-function is_smaller(triple, challenge)
-  // Is triple not greater than all of the sets obtained from challenge
-  // by elements of PGL2 that permute oo, 0, 1?
-  new := Sort(challenge);
-  if triple gt new then return false; end if;
-  new := Sort([1-a : a in new]);
-  if triple gt new then return false; end if;
-  new := Sort([1/a : a in new]);
-  if triple gt new then return false; end if;
-  new := Sort([1-a : a in new]);
-  if triple gt new then return false; end if;
-  new := Sort([1/a : a in new]);
-  if triple gt new then return false; end if;
-  new := Sort([1-a : a in new]);
-  if triple gt new then return false; end if;
-  return true;
+function IsFrobeniusFunction(F,f)
+  // The Frobenius function of an irreducible polynomial f of degree at least 3
+  // is defined in [Howe2024]. This function tests whether F is the Frobenius 
+  // function for such an f.
+  
+  n := Degree(f);
+  assert IsOdd(n) and n ge 3;
+  assert IsIrreducible(f);
+  r := (n-1)/2;
+  
+  if not (Degree(Numerator(F)) le r and Degree(Denominator(F)) le r)
+    then return false;
+  end if;
+  
+  R := Parent(f);
+  K := BaseRing(R);
+  q := #K;
+  L<alpha>:=ext<K | f>;
+
+  return alpha^q eq Evaluate(F,alpha);
 end function;
+
 
 //------------------------------------------------------------------------------
 
 function j_quartic(g)
   // Given a cubic or quartic polynomial g, compute the j-invariant of the 
   // Jacobian of y^2 = g.
+  
   denom := Discriminant(g);
   if Degree(g) eq 3 then 
     denom *:= Coefficient(g,3)^2;
@@ -719,7 +564,7 @@ function mapsbetweenpairsofquadratics(pair1,pair2)
   // Return the (possibly empty) set of elements of PGL2 that take the
   // first pair to the second.
   
-  if mu_invariant(pair1[1],pair1[2]) ne  mu_invariant(pair1[1],pair1[2]) then
+  if mu_invariant(pair1[1],pair1[2]) ne mu_invariant(pair2[1],pair2[2]) then
     return [];
   end if;
 
@@ -737,6 +582,8 @@ function mapsbetweenpairsofquadratics(pair1,pair2)
   b3 := Roots(g2,L)[1][1]; b4 := b3^q;
 
   M1 := Matrix(2,[a1*(a3-a2), a2*(a1-a3), (a3-a2), (a1-a3)]);
+  // M1 sends oo to a1, 0 to a2, and 1 to a3.
+  // So M1^-1 sends a1 to oo, a2 to 0, and a3 to 1.
   
   list := [];
   
@@ -744,6 +591,7 @@ function mapsbetweenpairsofquadratics(pair1,pair2)
              [b3,b4,b1,b2],[b4,b3,b1,b2],[b3,b4,b2,b1],[b4,b3,b2,b1]] do
     c1, c2, c3, c4 := Explode(cs);
     M2 := Matrix(2,[c1*(c3-c2), c2*(c1-c3), (c3-c2), (c1-c3)]);
+    // M2 sends oo to c1, 0 to c2, and 1 to c3.
     M := M2*M1^-1;
     if M[2,1] ne 0 then M := M/M[2,1]; else M := M/M[2,2]; end if;
     eltsM := Eltseq(M);
@@ -759,18 +607,36 @@ end function;
 
 function mu_invariant(q1, q2)
   // q1 is (x^2 + a*x + b) and q2 is (x^2 + c*x + d).
-  // return mu := ((b-d)^2 + (a-c)*(a*d-b*c))/((a^2-4*b)*(c^2-4*d)
+  // return mu := (a*c - 2*b - 2*d)^2/((a^2 - 4*b)*(c^2 - 4*d)).
   // This is an invariant of the product of two irreducible quadratics
-  // and j_quartic(q1*q2) =   256*(mu + 1)^3/mu^2)
-  b,a,one := Explode(Coefficients(q1));
-  d,c,one := Explode(Coefficients(q2));
-  return ((b-d)^2 + (a-c)*(a*d-b*c))/((a^2-4*b)*(c^2-4*d));
+  // and j_quartic(q1*q2) = 64*(mu + 3)^3/(mu - 1)^2.
+  // See [Howe2025], Remark 3.5.
+  if Degree(q1) eq 2 and Degree(q2) eq 2 then
+    b,a,one := Explode(Coefficients(q1));
+    d,c,one := Explode(Coefficients(q2));
+    return (a*c - 2*b - 2*d)^2/((a^2 - 4*b)*(c^2 - 4*d));
+  end if;
+    
+  if Degree(q1) eq 2 then
+    b,a,one := Explode(Coefficients(q1));
+    c,one := Explode(Coefficients(q2));
+  else    
+    b,a,one := Explode(Coefficients(q2));
+    c,one := Explode(Coefficients(q1));
+  end if;
+  return (a-2*c)^2/(a^2-4*b);
+
 end function;
 
 //------------------------------------------------------------------------------  
 
 function nonsquare(K)
   // Given a finite field of odd characteristic, return a nonsquare in K.
+  // When possible (K is an odd-degree extension of the prime field) we choose
+  // a nonsquare in the prime field. 
+  // When possible (K is an odd-degree extension of a prime field of order 
+  // congruent to 3 mod 4) we choose -1.
+
   p,e := Explode(Factorization(#K)[1]);
   if IsOdd(e) then
     n := K!-2;
@@ -785,112 +651,6 @@ end function;
 
 //------------------------------------------------------------------------------
 
-function PGL2reps(K,L : n := 0)
-  // Given a finite field K of odd characteristic and a quadratic extension
-  // L of K, return orbit representatives for the (left) action of PGL(2,K)
-  // on PGL(2,L). The optional input n is a nonsquare in K.
-  // The correctness of this algorithm is proven in the paper. The argument
-  // is also sketched in the following comments.
-  
-  if n eq 0 then n := nonsquare(K); end if;
-  beta := Roots(PolynomialRing(L)![-n,0,1])[1][1];
-  
-  // We think of elements of PGL_2 by specifying where they send oo, 0, and 1. 
-  
-  // Suppose we have the element of PGL(2,L) that sends [oo,0,1] to
-  // [zeta, eta, theta]. By operating with PGL(2,K), we can assume that
-  // zeta is either oo or beta.
-  
-  // [zeta = oo]: We can still act by the a*x+b group. So we can assume
-  // that eta is either 0 or beta.
-  
-  // [zeta = oo, eta = 0]: We can still scale by elements of K. So we can 
-  // assume that theta is either 1 or beta + a for an element of K.
-  
-  // Representatives:
-  // [oo, 0, 1] and [oo, 0, beta + a] for a in K.
-  // q + 1 elements.
-  // Matrices: [1,0,0,1], [beta+a,0,0,1]
-  
-  // [zeta = oo, eta = beta]: No available actions left, so theta can be 
-  // any element of L that is not beta.
-  
-  // Representatives:
-  // [oo, beta, theta] for theta in L with theta != beta.
-  // q^2 - 1 elements.
-  // Matrices: [theta-beta, beta, 0, 1]
-  
-  // [zeta = beta]: We can act by elements of PGL(2,K) that fix beta.
-  // eta can be any orbit representative of the action of this group 
-  // on P^1(L). For the large orbits we obtain these from the function
-  // betaorbitreps. The only trivial orbit allowable is {-beta}.
-
-  // [zeta = beta, eta = -beta]: We can still act by the elements of PGL(2,K)
-  // that fix beta because they fix -beta as well. So now choose theta from
-  // the orbit representatives from betaorbitreps.
-
-  //  Representatives:
-  // [beta, -beta, theta] for theta in orbitreps.
-  // q - 1 elements.
-  // Matrices: [beta*(beta+theta), beta*(theta-beta), beta+theta, beta-theta]
-  
-  
-  // [zeta = beta, eta in orbitreps]:
-  // Representatives:
-  // [beta, eta, theta] for eta in orbit reps and theta in P^1(L) with
-  // theta not equal to beta or eta.
-  // q - 1 choices for eta, q^2 - 1 choices for theta.
-  // Matrices: [beta*(eta-theta), eta*(theta-beta), eta-theta, theta-beta]
-  // And (when theta = oo):
-  // [beta, -eta, 1, -1]
-  
-  
-  // In the following, we specify in comments where oo, 0, and 1 get send to:
-  
-  // oo, 0, 1
-  reps := [Matrix(2,[L!1, 0, 0, 1])];
-  
-  // oo, 0, beta + a
-  reps cat:= [Matrix(2,[beta+a, 0, 0, 1]) : a in K];
-  
-  // oo, beta, theta    for theta in L with theta != beta.
-  reps cat:= [Matrix(2,[theta-beta, beta, 0, 1]) : theta in L | theta ne beta];
-  
-  orbitreps := betaorbitreps(K,beta);
-  
-  // beta, -beta, theta for theta in orbitreps.
-  reps cat:= [Matrix(2,[beta*(beta+theta), beta*(theta-beta), beta+theta, beta-theta]) :
-              theta in orbitreps];
-              
-  // beta, eta, oo   for eta in orbit reps
-  reps cat:= [Matrix(2,[beta, -eta, 1, -1] ) : eta in orbitreps];
-  
-  // beta, eta, theta   for eta in orbit reps and theta in L\{beta,eta}
-  reps cat:= [Matrix(2,[beta*(eta-theta), eta*(theta-beta), eta-theta, theta-beta]) :
-               eta in orbitreps, theta in L | theta ne beta and theta ne eta];
-  return reps;
-end function;
-
-//------------------------------------------------------------------------------
-
-function PGLorder(M)
-  // Given a matrix M in GL(2,K),
-  // determine its order in PGL,
-  // on the assumption that the order is 1, 2, 3, 5, or 6
-  if M[1,1] eq M[2,2] and M[1,2] eq 0 and M[2,1] eq 0 then return 1; end if;
-  M2 := M*M;
-  if M2[1,1] eq M2[2,2] and M2[1,2] eq 0 and M2[2,1] eq 0 then return 2; end if;
-  M3 := M2*M;
-  if M3[1,1] eq M3[2,2] and M3[1,2] eq 0 and M3[2,1] eq 0 then return 3; end if;
-  M5 := M2*M3;
-  if M5[1,1] eq M5[2,2] and M5[1,2] eq 0 and M5[2,1] eq 0 then return 5; end if;
-  M6 := M3*M3;
-  if M6[1,1] eq M6[2,2] and M6[1,2] eq 0 and M6[2,1] eq 0 then return 6; end if;
-  return 0;
-end function;
-
-//------------------------------------------------------------------------------
-
 function PGLreduce(M)
   // Given a matrix in GL(2,K), return its standard form in PGL(2,K), i.e. the 
   // form where either the lower left entry is 1, or the lower left entry is 0
@@ -898,81 +658,6 @@ function PGLreduce(M)
   s := M[2,1];
   if s eq 0 then s := M[2,2]; end if;
   return M/s;
-end function;
-
-//------------------------------------------------------------------------------
-
-function quadraticreps(K,v,type)
-  // Given a finite field K of odd characteristic, a nonzero element v of K,
-  // and a string that is either "split" or "irreducible", return 
-  // representatives of the set of 
-  //     * unordered pairs of elements of P^1(K)    [if "split"]
-  //     * elements of P^1(L)\P^1(K) where [L:K]=2  [if "irreducible"]
-  // under the action of the involution x --> v/x of P^1.
-  // Indicate which representatives are actually fixed by the involution.
-  // We represent elements of the sets we are considering by monic 
-  // separable polynomials over K of degree 1 or 2.
-
-  // x^2 + a*x + b  [b nonzero] --->  x^2 + a*v/b*x + v^2/b 
-  // x^2 + a*x      [a nonzero] --->  x + v/a
-  // x + a          [a nonzero] --->  x^2 + v/a*x
-  // x                          --->  x
-
-  // If type = irreducible:
-  // Let B be the set of nonzero elements b of K with b^2 != v^2 and with
-  // b first in {b, v^2/b} under an (arbitrary) order on K.
-  // Return all irreducible x^2 + a*x + b with a in K, b in B.
-  // Take b = v: 
-  // Return x^2 + a*x + v with appropriate splitting. These are fixed.
-  // Take b = -v:
-  // Let A be the set of nonzero elements a of K with a first in {a,-a} under
-  // an (arbitrary) order on K.
-  // Return x^2 + a*x - v for a in A with appropriate splitting.
-  // Return x^2 - v if v is not a square. This is fixed.
-  
-  // If type = reducible:
-  // Let B be the set of nonzero elements b of K with b^2 != v^2 and with
-  // b first in {b, v^2/b} under an (arbitrary) order on K.
-  // Return all separable reducible x^2 + a*x + b with a in K, b in B.
-  // Take b = v: 
-  // Return x^2 + a*x + v with appropriate splitting. These are fixed.
-  // Take b = -v:
-  // Let A be the set of nonzero elements a of K with a first in {a,-a} under
-  // an (arbitrary) order on K.
-  // Return x^2 + a*x - v for a in A with appropriate splitting.
-  // Return x^2 - v if v is a square. This is fixed.
-  // Take b = 0:
-  // Return x + a for a nonzero.
-  // Return x. This is fixed.
-  
-  assert type in {"split", "irreducible"};
-
-  A := [a : a in K | not a eq 0 and a eq Sort([a,-a])[1]];
-  B := [b : b in K | not b eq 0 and not b^2 eq v^2 and b eq Sort([b,v^2/b])[1]];
-  R<x>:=PolynomialRing(K);
-  
-  output := [];
-  
-  case type:
-    when "irreducible":
-      output cat:= [<x^2 + a*x + b, 1> : a in K, b in B | not IsSquare(a^2-4*b)];
-      output cat:= [<x^2 + a*x - v, 1> : a in A         | not IsSquare(a^2+4*v)];
-      output cat:= [<x^2 + a*x + v, 2> : a in K         | not IsSquare(a^2-4*v)];
-      if not IsSquare(v) then 
-        output cat:= [<x^2 - v, 2>];
-      end if;
-    when "split":
-      output cat:= [<x^2 + a*x + b, 1> : a in K, b in B | IsSquare(a^2-4*b) and a^2 ne  4*b];
-      output cat:= [<x^2 + a*x - v, 1> : a in A         | IsSquare(a^2+4*v) and a^2 ne -4*v];
-      output cat:= [<x + a        , 1> : a in K         | not a eq 0];
-      output cat:= [<x^2 + a*x + v, 2> : a in K         | IsSquare(a^2-4*v) and a^2 ne  4*v];
-      output cat:= [<x, 2>];
-      if IsSquare(v) then       
-        output cat:= [<x^2 - v, 2>];
-      end if;
-  end case;      
-
-  return output;
 end function;
 
 //------------------------------------------------------------------------------
@@ -1219,460 +904,381 @@ end function;
 
 /*
 ================================================================================
-Functions for producing orbit representatives for Sym^4.
+Functions for producing orbit representatives for certain Galois types in Sym^4. 
 ================================================================================
 */
 
 function fourpoints1111(K)
-  // K is a finite field of size q = p^e, with p odd.
-  // Return all PGL(2,K) orbits of Galois-stable quadruples
-  // of elements of P^1(K).
-  
-  // Note that the number of such sextuples is (q+1) choose 4. Dividing this by
-  // the size of PGL(2,q) we get (q-2)/24.
-  // Therefore, the sum over all representatives of 1 over the 
-  // stabilizer of the representative should be (q-2)/24.
-  // We check this at the end.
-  q := #K;
-  sortKstar := Sort([a : a in K | a ne 0]);
-  R<x>:=PolynomialRing(K);
-  polys1111 := [];
-  I := Matrix(2,[K|1,0,0,1]);
-  
-  
-  for i1 in [1..q-2] do
-    a1 := sortKstar[i1];
-    a2 := 1 - a1 ;
-    if a1 ge a2 then continue i1; end if;
-            
-    auts := false;
-            
-    basecase := Sort([a1,a2]);
-            
-    for i in [1..2] do
-      if 1 ne 3*basecase[i] then
-        s := 1/(1-3*basecase[i]);
-        newcase := Sort([-basecase[i]*s] cat [(basecase[j]-basecase[i])*s : j in [1..2] | j ne i]);
-        if newcase lt basecase then continue i1; end if;
-        if newcase eq basecase then auts:= true; end if;
-      end if;
-    end for;
-            
-    // Put 0 at oo.
-           
-    newbase := [1/basecase[i] : i in [1..2]];
-
-    sum := &+newbase;
-    if sum ne 0 then
-      s := 1/sum;
-      newcase := Sort([a*s : a in newbase]);
-      if newcase lt basecase then continue i1; end if;
-      if newcase eq basecase then auts:= true; end if;
-    end if;
-              
-    for j in [1..2] do
-      if sum ne 3*newbase[j] then
-        s := 1/(sum-3*newbase[j]);
-        newcase := Sort([-newbase[j]*s] cat [(newbase[k]-newbase[j])*s : k in [1..2] | k ne j]);
-        if newcase lt basecase then continue i1; end if;
-        if newcase eq basecase then auts:= true; end if;
-      end if;
-    end for;
-
-    for i in [1..2] do
-      // send ai to oo and oo to 0... x --> 1/(x-ai)
-      newbase := [-1/basecase[i]] cat [1/(basecase[j]-basecase[i]) : j in [1..2] | j ne i];
-        
-      sum := &+newbase;
-      if sum ne 0 then
-        s := 1/sum;
-        newcase := Sort([a*s : a in newbase]);
-        if newcase lt basecase then continue i1; end if;
-        if newcase eq basecase then auts:= true; end if;
-      end if;
-              
-      for j in [1..2] do
-        if sum ne 3*newbase[j] then
-          s := 1/(sum-3*newbase[j]);
-          newcase := Sort([-newbase[j]*s] cat [(newbase[k]-newbase[j])*s : k in [1..2] | k ne j]);
-          if newcase lt basecase then continue i1; end if;
-          if newcase eq basecase then auts:= true; end if;
-        end if;
-      end for;
-    end for;
-              
-        // We got one!
-              
-    aa := a2/a1;
-    f := x*(x-1)*(x-aa);
-    if auts then
-      autgroup := automorphisms1111(aa);
-    else
-      autgroup := [I];
-    end if;
-    polys1111 cat:= [<f,#autgroup,autgroup>];
-              
-  end for;
-
-  if 0 eq q mod 3 then
-    f := x^3 - x;
-    autgroup := automorphisms1111(K!-1);
-    polys1111 cat:= [<f, #autgroup, autgroup>];
-  end if;
-
-  count := 0;
-  if #polys1111 gt 0 then count := &+[1/z[2] : z in polys1111]; end if;
-  
-  assert count eq (q-2) / 24;
-  
-  return polys1111;
-end function;
-
-
-//------------------------------------------------------------------------------
-
-function fourpoints211(K);
-  // Return all effective degree-4 divisors on P^1 that consist of two
-  // rational point2 plus two Galois conjugate elements of the quadratic
-  // extension, up to PGL2(K).
-  // (q^2-q)/2 quadratics and (q+1) rational points gives q^2*(q+1)*(q-1)/4.
-  // Diving by PGL2 gives q/4.
-  // This will be the weighted sum of the divisors we output.
-  
-  // Put the rational points at 0 and infinity. In the paper we show what
-  // the possible quadratic factors are. Here we do something slightly 
-  // different, in order to better control the elements of the automorphism
-  // group.
-  
-  q := #K;
-  R<x>:=PolynomialRing(K);
-  I := Matrix(2,[K|1,0,0,1]);
-  polys211 := [];
-  B := Matrix(2,[K|-1,0,0,1]);
-
-
-  a0 := K!1;
-  A := Matrix(2,[K|0,a0,1,0]);
-  for a1 in K do
-    if a1 lt -a1 and not IsSquare(a1^2 - 4*a0) then
-      polys211 cat:= [<x*(x^2 + a1*x + a0), 2, [I,A]>];
-    end if;
-  
-    if a1 eq 0 and not IsSquare(a1^2 - 4*a0) then
-      polys211 cat:= [<x*(x^2 + a0), 4, [I,A,B,A*B]>];
-    end if;
-  end for;
-
-  a0 := nonsquare(K);
-  A := Matrix(2,[K|0,a0,1,0]);
-  for a1 in K do
-    if a1 lt -a1 and not IsSquare(a1^2 - 4*a0) then
-      polys211 cat:= [<x*(x^2 + a1*x + a0), 2, [I,A]>];
-    end if;
-    if a1 eq 0 and not IsSquare(a1^2 - 4*a0) then
-      polys211 cat:= [<x*(x^2 + a0), 4, [I,A,B,A*B]>];
-    end if;
-  end for;
-
-  assert &+[1/m[2] : m in polys211] eq q/4;
-  return polys211;
-end function;
-
-
-//------------------------------------------------------------------------------
-
-
- function fourpoints22(K)
   // Given a finite field K of odd characteristic, find representatives for
-  // the PGL(2,K) orbits of sets of two pairs of conjugate quadratic 
-  // points of P^1.
-  // We represent such sets by monic separable polynomials of degree 4
-  // that factor as a product of two distinct quadratics.
+  // the PGL(2,K) orbits of sets of four distinct elements of P^1(K).
+  // We represent such sets by monic separable polynomials of degree 3 or 4
+  // that factor as a product of distinct linears.
+  
+  // We normalize what the three fixed-point-free involutions of the set are by
+  // conjugating. If the fixed points of any of these involutions are rational,
+  // we normalize that involution to be x --> -x.
+  // Note that the fixed points are rational if and only if the
+  // negative determinant of the involution is a square.
+  // So if none of the involutions has rational fixed points, then -1 is not a 
+  // square, and all involutions have square determinants.
+  
+  // Note that there are (q+1) choose 4 sets of four distinct elements of P^1,
+  // and we are dividing out by PGL(2,K). That means that the sum, over our
+  // representatives, of 1 over the automorphism group of the representative
+  // should be equal to (q-2)/24.
+  
   q := #K;
   p,e := Explode(Factorization(q)[1]);
   R<x>:=PolynomialRing(K);
-  Kstarsort := [K|i : i in [1..p-1]];
-  Kstarsort cat:= [a : a in K | not a eq 0 and not a in Kstarsort];
-  // So we have a list of the nonzero elements of K, with the prime field
-  // elements at the start. This is just to hopefully make some polynomials
-  // look nicer. 
+  ns := nonsquare(K);
 
   list := [];
+  taken := [];
   I := Matrix(2,[K|1,0,0,1]);
   
-  // Note for reference: There is an involution that fixes the roots of
-  // x^2 + 2*a*x + d and that swaps the roots of x^2 + 2*b*x + d if and
-  // only if a*b = d, and in that casse the involution is
-  //  [-a  -d]
-  //  [ 1   a]
-  
+  // Case 1: There is an involution with rational fixed points.
+  // Normalize it to x --> -x.
+  // If -1 is a square, then we get two cases:
+  // Second is x --> d/x and third is x --> -d/x, where d is a 1 or a nonsquare.
+  // If -1 is not a square, we get one case:
+  // Second is x --> 1/x and third is x --> -1/x.
+
+  // Case 2: No involution has a rational fixed point. In this case -1 is not
+  // a square, and we normalize first to be x --> -1/x.
+  // Second is then [a 1 1 -a] for some a with -1-a^2 equal to a square.
+  // Third is [-1/a 1 1 1/a]
   
 
-  // We will let A be the involution that swaps the roots of each factor
-  // individually. We will let B be one of the involutions that swaps roots
-  // between factors, the such being A*B.
-
-  // The construction depends on whether or not -1 is a square.
-  
-  if 1 eq q mod 4 then
-    // An odd number of {A, B, A*B} have rational fixed points.
-
+  if IsSquare(K!-1) then
+    // There is an involution with rational fixed points.
+    inv1 := Matrix(2,[-1,0,0,1]);
+    
+    // First case: They *all* have rational fixed points.
+    inv2 := Matrix(2,[0, 1,1,0]);
+    inv3 := Matrix(2,[0,-1,1,0]);
+    auts := [I,inv1,inv2,inv3];
+    
     i := Sqrt(K!-1);
-    ns := nonsquare(K);
     
-
-    // First case: A has rational fixed points, as do B and A*B.
-    A  := Matrix(2,[K| 0, 1,1,0]);    // x --> 1/x
-    B  := Matrix(2,[K|-1, 0,0,1]);    // x --> -x
-    AB := Matrix(2,[K| 0,-1,1,0]);    // x --> -1/x
-    d := K!1;
-    basicn := 4; 
-    basicinvs := [I,A,B,AB];
-    
-    for a in K do 
-      b := -a;
-      if not IsSquare(a^2-d) and a eq Min([a,b,d/a,d/b]) then
-        f := (x^2 + 2*a*x + d)*(x^2 - 2*a*x + d);
-        if d eq a*b then
-          // There are additional automorphisms
-          inv4 := Matrix(2,[-a,-d,1, a]);
-          inv5 := Matrix(2,[-b,-d,1, b]);
-          inv6 := PGLreduce(B*inv4);
-          inv7 := PGLreduce(B*inv5);
-          largern := 8;
-          largerinvs := basicinvs cat [inv4, inv5, inv6, inv7];
-          list cat:= [<f,largern,largerinvs>];
-        else
-         list cat:= [<f,basicn,basicinvs>];
-        end if;
-      end if;
-    end for;
-    
-    // Second case: A has rational fixed points, B and A*B do not.
-    A  := Matrix(2,[K| 0, 1,1,0]);                                  // x --> 1/x
-    B  := Matrix(2,[K| (ns+1)/(ns-1), -1, 1, -(ns+1)/(ns-1)]);
-    AB := Matrix(2,[K| (ns-1)/(ns+1), -1, 1, -(ns-1)/(ns+1)]);
-    
-    d := K!1;
-    basicn := 4; 
-    basicinvs := [I,A,B,AB];
-    
-    bada := [-(ns+1)/(ns-1), -(ns-1)/(ns+1)];
-    for a in K do 
-      if not a in bada and not IsSquare(a^2-d) then
-        b := -((ns^2+1)*a + (ns^2-1))/((ns^2-1)*a + (ns^2+1));
-        if a eq Min([a,b,d/a,d/b]) then
-          f := (x^2 + 2*a*x + d)*(x^2 + 2*b*x + d);
-          if d eq a*b then
-            // There are additional automorphisms
-            inv4 := Matrix(2,[-a,-d,1, a]);
-            inv5 := Matrix(2,[-b,-d,1, b]);
-            inv6 := PGLreduce(B*inv4);
-            inv7 := PGLreduce(B*inv5);
-            largern := 8;
-            largerinvs := basicinvs cat [inv4, inv5, inv6, inv7];
-            list cat:= [<f,largern,largerinvs>];
-          else
-           list cat:= [<f,basicn,basicinvs>];
+    // Orbits of size two: {oo,0} {1,-1}
+    for a in K do
+      if not a in {K|0,1,-1,i,-i} then
+        four := (x-a)*(x+a)*(x-1/a)*(x+1/a);
+        j := j_quartic(four);
+        if not j in taken then
+          taken cat:= [j];
+          if j in {K|0,1728} then
+            bigauts := quarticLFTs(four,four);
+            list cat:= [<four,#bigauts,bigauts>];
+          else          
+            list cat:= [<four,#auts,auts>];
           end if;
         end if;
       end if;
     end for;
     
-    // Third case: A has no rational fixed points, B does.
-    A  := Matrix(2,[K| 0, ns,1,0]);    // x --> ns/x
-    B  := Matrix(2,[K|-1,  0,0,1]);    // x --> -x
-    AB := Matrix(2,[K| 0,-ns,1,0]);    // x --> -ns/x
-    
-    d := ns;
-    basicn := 4; 
-    basicinvs := [I,A,B,AB];
-    
-    for a in K do 
-      b := -a;
-      if not IsSquare(a^2-d) and a ne 0 and a eq Min([a,b]) then
-        f := (x^2 + 2*a*x + d)*(x^2 + 2*b*x + d);
-        // It is not possible for d to equal a*b, because a*b = -a^2 is a square,
-        // but d is a nonsquare. So we have no extra automorphisms.
-        list cat:= [<f,basicn,basicinvs>];
+    // Second case: The other two *do not* have rational fixed points.
+    inv2 := Matrix(2,[0, ns,1,0]);
+    inv3 := Matrix(2,[0,-ns,1,0]);
+    auts := [I,inv1,inv2,inv3];
+
+    // Orbits of size two: {oo,0}
+    for a in K do
+      if not a in {K|0} then
+        four := (x-a)*(x+a)*(x-ns/a)*(x+ns/a);
+        j := j_quartic(four);
+        if not j in taken then
+          taken cat:= [j];
+          if j in {K|0,1728} then
+            bigauts := quarticLFTs(four,four);
+            list cat:= [<four,#bigauts,bigauts>];
+          else          
+            list cat:= [<four,#auts,auts>];
+          end if;
+        end if;
       end if;
     end for;
 
-  else 
-  
-    // q = 3 mod 4, and an even number of {A, B, A*B} have rational fixed points.
+  else
+    // -1 is not a square.
     
-    ns := K!-1;
+    // First case: There is an involution with rational fixed points.
+    // In this case, there are two such, which we normalize to 
+    // x --> -x and x --> 1/x.
 
-    // We will need elements u and v of K such that -1 = u^2 + v^2.
-    for uu in Kstarsort do
-      if IsSquare(-1-uu^2) then
-        u := uu;
-        v := Sqrt(-1-u^2);
-        break uu;
-      end if;
-    end for;
-    
-    // First case: A and B have rational fixed points.
-    A  := Matrix(2,[K| 0, 1,1,0]);    // x --> 1/x
-    B  := Matrix(2,[K|-1, 0,0,1]);    // x --> -x
-    AB := Matrix(2,[K| 0,-1,1,0]);    // x --> -1/x
-    d := K!1;
-    basicn := 4; 
-    basicinvs := [I,A,B,AB];
-    
-    for a in K do 
-      b := -a;
-      if not IsSquare(a^2-d) and a ne 0 and a eq Min([a,b]) then
-        f := (x^2 + 2*a*x + d)*(x^2 - 2*a*x + d);
-        // It is not possible for d to equal a*b, because a*b = -a^2 is a nonsquare,
-        // but d = 1. So we have no extra automorphisms.
-       list cat:= [<f,basicn,basicinvs>];
-      end if;
-    end for;
-    
-    // Second case: A has no rational fixed points, B and A*B do.
-    A  := Matrix(2,[K|  0,-1, 1, 0]);     // x --> -1/x
-    B  := Matrix(2,[K| -1, 0, 0, 1]);     // x --> -x
-    AB := Matrix(2,[K|  0, 1, 1, 0]);     // x --> 1/x
-    
-    d := ns;
-    basicn := 4; 
-    basicinvs := [I,A,B,AB];
+    inv1 := Matrix(2,[K|-1,0,0,1]);
+    inv2 := Matrix(2,[K|0, 1,1,0]);
+    inv3 := Matrix(2,[K|0,-1,1,0]);
+    auts := [I,inv1,inv2,inv3];
 
-    for a in K do 
-      b := -a;
-      if not IsSquare(a^2-d) and a eq Min([a,b,1/a,1/b]) then
-        f := (x^2 + 2*a*x + d)*(x^2 + 2*b*x + d);
-        if d eq a*b then
-          // There are additional automorphisms
-          inv4 := Matrix(2,[-a,-d,1, a]);
-          inv5 := Matrix(2,[-b,-d,1, b]);
-          inv6 := PGLreduce(B*inv4);
-          inv7 := PGLreduce(B*inv5);
-          largern := 8;
-          largerinvs := basicinvs cat [inv4, inv5, inv6, inv7];
-          list cat:= [<f,largern,largerinvs>];
-        else
-         list cat:= [<f,basicn,basicinvs>];
+    // Orbits of size two: {oo,0} {1,-1}
+    for a in K do
+      if not a in {K|0,1,-1} then 
+        four := (x-a)*(x+a)*(x-1/a)*(x+1/a);
+        j := j_quartic(four);
+        if not j in taken then
+          taken cat:= [j];
+          if j in {K|0,1728} then
+            bigauts := quarticLFTs(four,four);
+            list cat:= [<four,#bigauts,bigauts>];
+          else          
+            list cat:= [<four,#auts,auts>];
+          end if;
         end if;
       end if;
     end for;
     
-    // Third case: none of A, B, A*B has rational fixed points.
-    A  := Matrix(2,[K|   0, -1, 1,    0]);    // x --> -1/x
-    B  := Matrix(2,[K| 1/u,  1, 1, -1/u]);    // x --> (x + u)/(u*x - 1)
-    AB := Matrix(2,[K|  -u,  1, 1,    u]);    // x --> (-u*x + 1)/(x + u)
     
-    d := ns;
-    basicn := 4; 
-    basicinvs := [I,A,B,AB];
+    // Second case: No involution has rational fixed points.
+    inv1 := Matrix(2,[K|0,-1,1,0]);
+    good := 0;
+    for a in PrimeField(K) do
+      if IsSquare(-1-a^2) then good := a; break a; end if;
+    end for;
+    if good eq 0 then
+      for a in K do
+        if IsSquare(-1-a^2) then good := a; break a; end if;
+      end for;
+    end if;
+    inv2 := Matrix(2,[good,1,1,-good]);
+    inv3 := Matrix(2,[-1/good,1,1,1/good]);
+    auts := [I,inv1,inv2,inv3];
 
-    bada := [u,-1/u];
-    for a in K do 
-      if not a in bada and not IsSquare(a^2-d) then
-        b := ( (u^2-1)*a + 2*u ) / (2*u*a - (u^2-1) );
-        if a eq Min([a,b,d/a,d/b]) then
-          f := (x^2 + 2*a*x + d)*(x^2 + 2*b*x + d);
-          if d eq a*b then
-            // There are additional automorphisms
-            inv4 := Matrix(2,[-a,-d,1, a]);
-            inv5 := Matrix(2,[-b,-d,1, b]);
-            inv6 := PGLreduce(B*inv4);
-            inv7 := PGLreduce(B*inv5);
-            largern := 8;
-            largerinvs := basicinvs cat [inv4, inv5, inv6, inv7];
-            list cat:= [<f,largern,largerinvs>];
-          else
-           list cat:= [<f,basicn,basicinvs>];
+    // a, -1/a, (good*a + 1)/(a - good), (-a + good)/(good*a + 1)
+    // No orbits of size two.
+    // Orbit of oo: oo, 0, good, -1/good
+
+    four := x*(x-good)*(x+1/good);
+    j := j_quartic(four);
+    if not j in taken then
+      taken cat:= [j];
+      if j in {K|0,1728} then
+        bigauts := quarticLFTs(four,four);
+        list cat:= [<four,#bigauts,bigauts>];
+      else          
+        list cat:= [<four,#auts,auts>];
+      end if;
+    end if;
+
+
+    for a in K do
+      if not a in {0,good,-1/good} then
+        four := (x-a)*(x+1/a)*(x-(good*a+1)/(a-good))*(x-(-a+good)/(good*a+1));
+        j := j_quartic(four);
+        if not j in taken then
+          taken cat:= [j];
+          if j in {K|0,1728} then
+            bigauts := quarticLFTs(four,four);
+            list cat:= [<four,#bigauts,bigauts>];
+          else          
+            list cat:= [<four,#auts,auts>];
           end if;
         end if;
       end if;
     end for;
   end if;
-    
-  assert &+[1/r[2] : r in list] eq (q-2)/8;
+  
+  assert &+[1/r[2] : r in list] eq (q-2)/24;
   
   return list;
 end function;
 
-
 //------------------------------------------------------------------------------
 
-function fourpoints31(K);
-  // Return all effective degree-4 divisors on P^1 that consist of a
-  // single rational point plus three Galois conjugate elements of the
-  // cubic extension, up to PGL2(K).
-  // (q^3-q)/3 cubics and (q+1) rational points gives q*(q-1)*(q+1)^2/3.
-  // Diving by PGL2 gives (q + 1)/3.
-  // This will be the weighted sum of the divisors we output.
+function fourpoints22(K)
+  // Given a finite field K of odd characteristic, find representatives for the 
+  // PGL(2,K) orbits of sets of two pairs of conjugate quadratic points of P^1.
+  // We represent such sets by monic separable polynomials of degree 4 that
+  // factor as a product of two distinct quadratics. We return the quartics,
+  // the sizes of their automorphism groups, and the automorphism groups
+  // themselves.
+  // We use Theorem 3.4 of [Howe2025]. However, that result gives us
+  // representatives whose automorphism groups (isomorphic to the Klein 4-group
+  // with one exception) are not normalized, so we go through the list 
+  // produces by the theorem and modify the representative so that the
+  // PGL(2,K) stabilizer of the quartic is one of three fixed groups (except
+  // for the single exceptional case).
   
-  // Put the rational point at infinity. This leaves us with a cubic.
-  // In char 3, this is x^3 + a2*x^2 + a1*x + a0 and we know a0!=0 and
-  // one of a2 and a1 is nonzero.
-  // If a2 is nonzero scale so that it is 1. Then shift so that a2 = 0.
-  // No automorphisms.
-  // If a2 = 0 then scale so that a1 = -1 or a1 = -ns.
-  // First try -ns: It's impossible, because x^3 - ns*x is an
-  // F3 linear map with trivial kernel, so we'll always have a root.
-  // So we have x^3 - x + a, where a is one of three choices, with trace 0, 1, or 2.
-  // But trace 0 has a root. And by replacing x with -x, we may assume a0 has trace 1.
-  
-  // In other characteristics: Shift so trace is 0. If a1 is nonzero scale so a1 = a0.
-  // No autos. But if a1 = 0 then must have q = 1 mod 3 and we get to extras.
-
   q := #K;
   R<x>:=PolynomialRing(K);
+  polys22 := [];
+  
+  ns := nonsquare(K);
+  L<rho>:=ext<K | x^2 - ns>;
+  
+  zeta := PrimitiveElement(L);
+  zetai:=L!1;
+  
   I := Matrix(2,[K|1,0,0,1]);
-  polys31 := [];
+  
+  // We use Theorem 3.4 from the paper. Our representative polynomials
+  // will be (x^2 - ns)*f, where f ranges over the minimal polynomials of
+  // rho*(zeta^i-1)/(zeta^i+1), for i = 1 to i = (q-1)/2. For i < (q-1)/2,
+  // the automorphism group of the polynomial has order 4; for i = (q-1)/2,
+  // it has order 8. The groups are as given in the code below.
+  
+  // We do the cases with automorphism group of order 4 first.
+  
+  for i in [1..(q-3) div 2] do
+    zetai *:= zeta;
+    f := MinimalPolynomial(rho*(zetai-1)/(zetai+1));
+    A := Coefficient(f,1);
+    B := Coefficient(f,0);
 
-  if 0 eq q mod 3 then
-    badvals := {a^3 + a^2  : a in K};
-    badvals := Sort([a : a in badvals]);
-    for a in K do 
-      if not a in badvals then
-        polys31 cat:= [<x^3 + x^2 - a, 1, [I]>];
-      end if;
-    end for;
-    p,e := Explode(Factorization(q)[1]);
-    nonzerotrace := K!1;
-    while Trace(nonzerotrace,GF(3)) eq 0 do
-      nonzerotrace *:= K.1;
-    end while;
-    A1 := Matrix(2,[K|1,1,0,1]);
-    A2 := Matrix(2,[K|1,2,0,1]);
-    polys31 cat:= [<x^3 + x^2 + nonzerotrace, 3, [I,A1,A2]>];
+    inv1 := PGLreduce(Matrix(2,[-B-ns,-A*ns,A,B+ns]));
+
+    twov := Sqrt((A^2-4*B)/ns);
+    inv2 := PGLreduce(Matrix(2,[-A, -2*B-ns*twov, 2-twov, A]));
+    inv3 := PGLreduce(Matrix(2,[-A, -2*B+ns*twov, 2+twov, A]));
+    
+    polys22 cat:= [<(x^2-ns)*f, 4, [I,inv1,inv2,inv3]>];
+  end for;
+  
+  // And finally, i = (q-1)/2.
+  
+  zetai *:= zeta;
+  f := MinimalPolynomial(rho*(zetai-1)/(zetai+1));
+  A := Coefficient(f,1);
+  B := Coefficient(f,0);
+  assert B eq ns;
+  
+  inv1 := Matrix(2,[-B-ns,-A*ns,A,B+ns]);
+
+  twov := Sqrt((A^2-4*B)/ns);
+  inv2 := Matrix(2,[-A, -2*B-ns*twov, 2-twov, A]);
+  inv3 := Matrix(2,[-A, -2*B+ns*twov, 2+twov, A]);
+  
+  iota := Matrix(2,[-A/2,-ns,1,A/2]);
+  polys22 cat:= [<(x^2-ns)*f, 8, [I,inv1,inv2,inv3] cat 
+                                 [PGLreduce(iota*m) : m in [I,inv1,inv2,inv3]]  >];
+
+
+  // Now we renormalize these products so that the automorphism groups are in a
+  // standard form. We only do this for the products with automorphism groups of
+  // order 4, because there is only one product with larger automorphism group.
+  
+  // When q is 3 mod 4 we will want to know an element of K, call it "standard",
+  // with -1 - standard^2 equal to a square.
+  
+  if 3 eq #K mod 4 then
+    standard := K!0;
+    repeat standard +:= 1;
+    until IsSquare(-1-standard^2);
   else
-    badvals := {a^3/(a+1) : a in K | a ne -1};
-    badvals := Sort([a : a in badvals]);
-    for a in K do 
-      if not a in badvals then
-        polys31 cat:= [<x^3 - a*x - a, 1, [I]>];
-      end if;
-    end for;
-    if 1 eq q mod 3 then
-      zeta := Roots(x^2+x+1)[1][1];
-      A1 := Matrix(2,[zeta,0,0,1]);
-      A2 := Matrix(2,[zeta^2,0,0,1]);
-      p,e := Explode(Factorization(q)[1]);
-      noncube := PrimitiveElement(K);
-      polys31 cat:= [<x^3 - noncube,   3, [I,A1,A2]>,
-                     <x^3 - noncube^2, 3, [I,A1,A2]>];
-    end if;
+    standard := 0;
   end if;
   
-  assert &+[1/m[2] : m in polys31] eq (q + 1)/3;
-  return polys31;
-end function;
+  costandard := Sqrt(-1-standard^2);
+  // standard^2 + costandard^2 = -1
+  
+  for i in [1..#polys22] do
+    product := polys22[i][1];
+    autos := polys22[i][3];
+    if #autos eq 4 then
+      nontrivialautos := [A : A in autos | not (A[1,1] eq A[2,2] and A[2,1] eq 0 and A[1,2] eq 0)];
+      splitfixedpoints := [IsSquare(-Determinant(A)) : A in nontrivialautos];
+      ParallelSort(~splitfixedpoints,~nontrivialautos);
+    
+      // We will normalize on the third and second involutions.
+    
+      A3 := nontrivialautos[3];
+      A2 := nontrivialautos[2];
+      if splitfixedpoints[3] then
+        fixedpol3 := x^2*A3[2,1] + x*A3[2,2] - x*A3[1,1] - A3[1,2];
+        if Degree(fixedpol3) eq 2 then
+          root1, root2 := Explode([a[1] : a in Roots(fixedpol3)]);
+          M3 := Matrix(2,[1,-root1,1,-root2]);
+        else // Degree is 1, and A3 is [-1, a; 0, 1].
+          root1 := Roots(fixedpol3)[1][1];
+          M3 := Matrix(2,[1,-root1,0,1]);
+        end if;          
+
+        A2 := M3*A2*M3^-1;
+        
+        // Now A2 must be of the form x --> s/x.
+        scale := A2[1,2]/A2[2,1];
+        bool, root := IsSquare(scale);
+        if not bool then 
+          bool, root := IsSquare(scale/ns);
+        end if;
+        M2 := Matrix(2,[1,0,0,root]);
+        
+        M := M2*M3;
+        // So M*A*M^-1 will conjugate the existing automorphisms into 
+        // standardized ones.
+        // What does it do to our product of quadratics?
+        
+        newproduct := Numerator(Evaluate(product,
+                                 (M[2,2]*x - M[1,2])/(-M[2,1]*x + M[1,1]))
+                                 * (-M[2,1]*x + M[1,1])^4);
+        newproduct := newproduct / Coefficient(newproduct,4);
+        
+        polys22[i] := <newproduct, 4, [PGLreduce(M*A*M^-1) : A in autos]>;
+      else
+      
+        // None of our involutions have a fixed point. Necessarily, -1 is a 
+        // nonsquare, and the function nonsquare() chooses this for out ns.
+        // Note that this also implies that q is an odd power of a prime that
+        // is 3 modulo 4.
+      
+        // We have two commuting involutions, each with nonrational fixed
+        // points. Move the fixed points of A3 to the roots of x^2 + 1.
+        
+        fixedpol3 := x^2*A3[2,1] + x*A3[2,2] - x*A3[1,1] - A3[1,2];
+        fixedpol3 := fixedpol3/A3[2,1];
+        shift := -Coefficient(fixedpol3,1)/2;
+        scale := 1/Sqrt(-Coefficient(fixedpol3,1)^2/4+Coefficient(fixedpol3,0));
+        M3 := Matrix(2,[scale, -shift*scale,0,1]);        
+        A2 := PGLreduce(M3*A2*M3^-1);
+
+        // A3 is now  x --> -1/x
+        // A2 is an involution without rational fixed points 
+        // that commutes with A3.
+        // Involutions that commute with A3:
+        // [0, 1; 1, 0] --- has rational fixed points.
+        // [0,-1; 1, 0] --- same as A3.
+        // [a, 1; 1,-a] --- nonrational fixed points when a^2 + 1 is nonsquare.
+        // A2 = [a, 1; 1, -a] 
+        // We want to transform A2 into [standard, 1; 1, -standard];
+        
+        a := A2[1,1];
+        r := (a*standard - 1) + costandard*Sqrt(-(a^2 + 1));
+        s := a + standard;
+        
+        M2 := Matrix(2,[r,s,s,-r]);
+        
+        check := PGLreduce(M2*A2*M2^-1);
+        assert check eq Matrix(2,[standard,1,1,-standard]);
+
+        M := M2*M3;
+        // So M*A*M^-1 will conjugate the existing automorphisms into 
+        // standardized ones.
+        // What does it do to our product of quadratics?
+        
+        newproduct := Numerator(Evaluate(product,
+                                 (M[2,2]*x - M[1,2])/(-M[2,1]*x + M[1,1]))
+                                 * (-M[2,1]*x + M[1,1])^4);
+        newproduct := newproduct / Coefficient(newproduct,4);
+        
+        polys22[i] := <newproduct, 4, [PGLreduce(M*A*M^-1) : A in autos]>;
+      end if;
+    end if;
+  end for;
+
+  return polys22;
+end function;  
 
 
 //------------------------------------------------------------------------------
 
 function fourpoints4(K : ns := 0)
   // Given a finite field K of odd characteristic, find representatives for
-  // the PGL(2,K) orbits of sets of four conjugate elements of P^1.
-  // We represent such sets by monic separable polynomials of degree 4.
-  // Try doing this with (nearly) all computations in K.
+  // the PGL(2,K) orbits of sets of four conjugate elements of P^1. We represent
+  // such sets by monic irreducible polynomials of degree 4. We implement this 
+  // using Theorem 1.2 of [Howe2025], but we arrange to do nearly all 
+  // computations done in K rather than in extensions fields. Note that the
+  // representatives have the property that their involution is normalized to
+  // be either x --> 1/x or x --> ns/x.
   // The optional input ns should be a nonsquare in K.
   
   q := #K;
@@ -1687,7 +1293,6 @@ function fourpoints4(K : ns := 0)
   beta := Roots(y^2-ns)[1][1];
 
   // Keep track of trace of gen^i, of trace of gen^i/beta, of norm of gen^i.
-
 
   n0 := Norm(gen,K);
   t0 := Trace(gen,K);
@@ -1712,7 +1317,6 @@ function fourpoints4(K : ns := 0)
   inv1 := Matrix(2,[K!0,1,1,0]);
   inv2 := Matrix(2,[K!0,ns,1,0]);
   
-
   for i in [1..upperlimit] do
     c3 := (4*n - 4)/(t - n - 1);
     c2 := (-2*t - 6*n - 6)/(t - n - 1);
@@ -1755,7 +1359,7 @@ function fourpoints4(K : ns := 0)
       M2 := Matrix(2,[alpha2*(alpha4-alpha3), alpha3*(alpha2-alpha4), (alpha4-alpha3), (alpha2-alpha4)]);
       M3 := M2*M1^-1;
       aut := Matrix(2,[K|M3[1,1]/M3[2,1], M3[1,2]/M3[2,1], 1, M3[2,2]/M3[2,1]]);
-      list cat:= [<h, 4, [I,aut,aut^2,aut^3]>];
+      list cat:= [<h, 4, [I,PGLreduce(aut),PGLreduce(aut^2),PGLreduce(aut^3)]>];
     when 3:
       c3 := (4*n - 4)/(t - n - 1);
       c2 := (-2*t - 6*n - 6)/(t - n - 1);
@@ -1775,7 +1379,7 @@ function fourpoints4(K : ns := 0)
       M2 := Matrix(2,[alpha2*(alpha4-alpha3), alpha3*(alpha2-alpha4), (alpha4-alpha3), (alpha2-alpha4)]);
       M3 := M2*M1^-1;
       aut := Matrix(2,[K|M3[1,1]/M3[2,1], M3[1,2]/M3[2,1], 1, M3[2,2]/M3[2,1]]);
-      list cat:= [<h, 4, [I,aut,aut^2,aut^3]>];
+      list cat:= [<h, 4, [I,PGLreduce(aut),PGLreduce(aut^2),PGLreduce(aut^3)]>];
   end case;
 
   return list;
@@ -1788,16 +1392,28 @@ Functions for producing orbit representatives for Sym^6.
 ================================================================================
 */
 
-function sixpoints111111(K)
+function genustwo1x(K : passback := true, curves := true, output := false, outputfile := "")
   // K is a finite field of size q = p^e, with p odd.
-  // Return all PGL(2,K) orbits of Galois-stable sextuples
-  // of elements of P^1(K).
+  // Compute representatives of either
+  //    (a) all isomorphism classes of genus-2 curves over K with Weierstrass
+  //        divisor of Galois type (1,1,1,1,1,1), or
+  //    (b) all PGL(2,K) orbits of divisors of P^1 of Galois type (1,1,1,1,1,1),
+  // depending on whether curves = true or curves = false.
   
-  // Note that the number of such sextuples is (q+1) choose 6. Dividing this by
-  // the size of PGL(2,q) we get (q-2)*(q-3)*(q-4)/720.
-  // Therefore, the sum over all representatives of 1 over the 
-  // stabilizer of the representative should be (q-2)*(q-3)*(q-4)/720.
+  // If passback = true, we return the set of representatives; otherwise we
+  // return an empty list.
+  
+  // If output = true, we print the representatives as they are computed.
+  // We print to standard out if outputfile = ""; otherwise, we print to 
+  // the named file.
+  
+  // In any case, the sum, over all representatives, of 1 over the size of the
+  // automorphism group of the representative should be (q-2)*(q-3)*(q-4)/720.
   // We check this at the end.
+  
+  // We include the size of the automorphism group of each representative as 
+  // part of the output. If we are passing back a list, we include the
+  // automorphism group itself, as well.
   
   // We normalize our collection of six points by assuming one is at oo, one
   // is at 0, and the sum of the others is 1. Every collection of six rational
@@ -1805,18 +1421,29 @@ function sixpoints111111(K)
   // exception: when the six points are the six elements of P^1(F_5). We handle
   // that case separately.
   
+  // [Proof sketch: If there is a sextuple that does not have a representative
+  // of this form, write it as oo, 0, 1, x, y, -1-x-y. Shifting by 1 gives the
+  // sextuple oo, -1, 0, x-1, y-1, -2-x-y, and we see that 5 = 0, so we are in
+  // characteristic 5. Then, applying the condition to all equivalent sextuples
+  // that include 0 and oo, we get an easily-solvable system of 5 equations in
+  // x and y.]
+  
   // To choose which of these normalized forms to use, we use the one where the
   // ordered set of points other than 0 and oo comes first in some total 
   // ordering.
   
-  
   q := #K;
   if q lt 5 then return []; end if;
+  
+  Clist := [];
+  checksum := 0;
+  if outputfile ne "" then
+    SetOutputFile(outputfile);
+  end if;
+  
   sortKstar := Sort([a : a in K | a ne 0]);
   R<x>:=PolynomialRing(K);
-  polys111111 := [];
   I := Matrix(2,[K|1,0,0,1]);
-  
   
   for i1 in [1..q-4] do
     a1 := sortKstar[i1];
@@ -1894,7 +1521,18 @@ function sixpoints111111(K)
         else
           autgroup := [I];
         end if;
-        polys111111 cat:= [<f,#autgroup,autgroup>];
+        
+        if curves then
+          Cs := curves_from_divisor(f,autgroup);
+        else
+          Cs := [<f,#autgroup,autgroup>];
+        end if;
+
+        for C in Cs do
+          checksum +:= 1/C[2]; 
+          if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+          if passback then Clist cat:= [C]; end if;
+        end for;
               
       end for;
     end for;
@@ -1903,353 +1541,311 @@ function sixpoints111111(K)
   if 0 eq q mod 5 then
     f := x^5 - x;
     autgroup := automorphisms111111(K!2,K!3,K!4);
-    polys111111 cat:= [<f, #autgroup, autgroup>];
+
+    if curves then
+      Cs := curves_from_divisor(f,autgroup);
+    else
+      Cs := [<f,#autgroup,autgroup>];
+    end if;
+
+    for C in Cs do
+      checksum +:= 1/C[2]; 
+      if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+      if passback then Clist cat:= [C]; end if;
+    end for;
   end if;
   
-  assert &+[1/z[2] : z in polys111111] eq (q-2)*(q-3)*(q-4) / 720;
+  if outputfile ne "" then
+    UnsetOutputFile();
+  end if;
+
+  assert checksum eq (q-2)*(q-3)*(q-4) / 720;
   
-  return polys111111;
+  return Clist;
 end function;
 
 
 
 //------------------------------------------------------------------------------
 
-function sixpoints21111(K);
+
+function genustwo2x(K : passback := true, curves := true, output := false, outputfile := "")
   // K is a finite field of size q = p^e, with p odd.
-  // Return all PGL(2,K) orbits of Galois-stable sextuples
-  // of elements, two in the degree-2 extension of K and four in P^1(K).
+  // Compute representatives of either
+  //    (a) all isomorphism classes of genus-2 curves over K with Weierstrass
+  //        divisor of Galois type (2, ...)
+  //    (b) all PGL(2,K) orbits of divisors of P^1 of Galois type (2, ...),
+  // depending on whether curves = true or curves = false.
+  
+  // If passback = true, we return the set of representatives; otherwise we
+  // return an empty list.
+  
+  // If output = true, we print the representatives as they are computed.
+  // We print to standard out if outputfile = ""; otherwise, we print to 
+  // the named file.
+  
+  // In any case, the sum, over all representatives of a given Galois type, of 1
+  // over the size of the automorphism group of the representative should be as
+  // follows:
+  
+  // Galois type (2,1,1,1,1): q*(q-1)*(q-2)    /48
+  // Galois type (2,2,1,1):   q*(q+1)*(q-2)    /16
+  // Galois type (2,2,2):     (q-2)*(q^2-q-4)  /48
 
-  // Note that the number of irreducible monic quadratics is (q^2 - q)/2 and
-  // the number of elements of P^1(K) is q + 1. We get (q^2 - q)/2 times
-  // (q+1) choose 4 as the total number of such sextuples. Dividing this by the
-  // size of PGL(2,K), we get q*(q-1)*(q-2)/48.
-  // Therefore, the sum over all representatives of 1 over the 
-  // stabilizer of the representative should be q*(q-1)*(q-2)/48.
   // We check this at the end.
-
-
-
-  q := #K;
-  R<x>:=PolynomialRing(K);
-  I := Matrix(2,[K|1,0,0,1]);
-  polys21111 := [];
-
-  // First, get a list of representatives for all products of three or four
-  // linears under the action of PGL(2,K).
   
-  products := fourlinearreps(K);
-    
-  // Get a list of all irreducible quadratics.
-  allquads := [x^2 + a*x + b : a,b in K | not IsSquare(a^2 - 4*b)];
+  // We include the size of the automorphism group of each representative as 
+  // part of the output. If we are passing back a list, we include the
+  // automorphism group itself, as well.
   
-  autgroups := Sort([a : a in {m[3] : m in products}]);
+  if outputfile ne "" then
+    SetOutputFile(outputfile);
+  end if;
 
-  for A in autgroups do
-    // Compute representatives for the irreducible quadratics under the
-    // action of A. 
-    
-    Aquads := [];
-    for quad in allquads do
-      quadauts := [];
-      orbit := [quad];
-      for M in A do 
-        num := M[1,1]*x + M[1,2];
-        den := M[2,1]*x + M[2,2];
-        g := Numerator(Evaluate(quad,num/den)*den^2);
-        g := g/Coefficient(g,Degree(g));
-        orbit cat:= [g];
-        if g eq quad then quadauts cat:= [M]; end if;
-      end for;
-      if quad eq Sort(orbit)[1] then
-        Aquads cat:= [<quad,quadauts>];
-      end if;
-    end for;
-    
-    for i in [1..#products] do
-      f, n, Ms := Explode(products[i]);
-      if Ms eq A then
-         // Run through all irreducible quadratics, up to the automorphisms of f.
-        for quadandauts in Aquads do
-          quad, quadauts := Explode(quadandauts);
-          polys21111 cat:= [<f*quad, #quadauts, quadauts>];          
-        end for;
-      end if;
-    end for;
-  end for;
-  
-  
-  assert &+[1/m[2] : m in polys21111] eq q*(q-1)*(q-2)/48;
-  return polys21111;
-end function;
-
-//------------------------------------------------------------------------------
-
-
-function sixpoints2211(K);
-  // K is a finite field of size q = p^e, with p odd.
-  // Return all PGL(2,K) orbits of Galois-stable sextuples
-  // of elements, four in the degree-2 extension of K and two in K.
-
-  // Note that the number of irreducible monic quadratics is (q^2 - q)/2 and
-  // the number of elements of P^1(K) is q + 1. Choosing two of each gives us
-  // (q+1)*q/2 * q*(q-1)*(q^2 - q - 2)/8 sextics. Dividing this by the
-  // size of PGL(2,K), we get q*(q^2 - q - 2)/16,
-  // Therefore, the sum over all representatives of 1 over the 
-  // stabilizer of the representative should be q*(q^2 - q - 2)/16.
-  // We check this at the end.
-
-  // We will normalize by putting the rational points at 0 and oo.
-  // Then we need all products of two irreducible quadratics, up to scaling.
-
+  Clist := [];
   q := #K;
   R<x>:=PolynomialRing(K);
   ns := nonsquare(K);
-  
   I := Matrix(2,[K|1,0,0,1]);
   negone := Matrix(2,[K|-1,0,0,1]);
   
-  polys2211 := [];
+
+
+  // First, type (2,1,1,1,1).
+  checksum21111 := 0;
+
+  // Get a list of representatives for all products of three or four linears 
+  // under the action of PGL(2,K). The routine we call chooses reprentatives
+  // so that the collection of automorphism groups of the representatives
+  // is bounded.
   
+  products := fourpoints1111(K);
+    
+  autgroups := Sort([a : a in {m[3] : m in products}]);
 
-  // First, find all values of a such that x^2 + x + a is irreducible.
-  
-  nonsquares := [a : a in K | not IsSquare(a)];
-  squares := [a*ns : a in nonsquares];
+  for A in autgroups do
+    // Compute representatives for the separable quadratics under the
+    // action of A. For each rep, multiply the rep by the linear products 
+    // with automorphism group A.
+    
+    productsA := [z : z in products | z[3] eq A];
+    
+    // To make the computation of orbits representatives of A acting on
+    // quadratics more efficient, we precompute some expressions.
+    shortA := [M : M in A | M ne I];
+    rats := [(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]) : M in shortA];
+    mults := [(M[2,1]*x + M[2,2])^2 : M in shortA];
 
-  goodas := [(1-m)/4 : m in nonsquares];   // So x^2 + x + a is irreducible.
-  
-  // The *invariant* of x^2 + u*x + v is v/u^2. Unchanged by scaling or
-  // by inversion of roots.
-  
-  // First we find products of (scaled) versions of these quadratics, with
-  // the first having smaller invariant than the second.
-  // If we have (x^2 + x + a) * (x^2 + b*x + b^2*c)
-  // then x --> a/x takes the product to
-  // (x^2 + x + a)*(x^2 + (a/(b*c))*x + a^2/(b^2*c))
-  // so we can also demand that b < a/(b*c) or  b = a/(b*c).
-  // In the first case there are no automorphisms, because they would 
-  // have to fix the factors, so would have to be x --> a/x, which doesn't
-  // fix second factor.
-  // In the second case, we have (x^2 + x + a)*(x^2 + b*x + a) with b!=1
-  // and x --> a/x is an automorphism. (If b = -1 then invariants would be equal.)
+    for a,b in K do
+      quadratic := x^2 + a*x + b;
+      D := Discriminant(quadratic);
+      if IsSquare(D) then continue b; end if;
+   
+      autgroup := [I];
+      for i in [1..#shortA] do
+        g := Numerator(Evaluate(quadratic,rats[i]) * mults[i]);
+        g := g/Coefficient(g,Degree(g));
+        if g lt quadratic then continue b; end if;
+        if g eq quadratic then
+          autgroup cat:= [shortA[i]];
+        end if;
+      end for;
 
-  for a,c in goodas do
-    if a lt c then
-      aoverc := a/c;
-      polys2211 cat:= [<x*(x^2 + x + a)*(x^2 + b*x + b^2*c), 1, [I]> : b in K | b ne 0 and b lt aoverc/b];
-    end if;
-  end for;
-  
-  for a in goodas do
-    inv := Matrix(2,[0,a,1,0]);
-    polys2211 cat:= [<x*(x^2 + x + a)*(x^2 + b*x + a), 2, [I,inv]> : b in K | b ne 0 and b^2 ne 1 and a lt a/b^2 and not IsSquare(b^2-4*a)];
-  end for;          
+      for quartic in productsA do
+        f := quartic[1]*quadratic;
+        if curves then
+          Cs := curves_from_divisor(f,autgroup);
+        else
+          Cs := [<f,#autgroup,autgroup>];
+        end if;
 
-  
-  // Second, we have the products of scaled versions of these, both with the
-  // same invariant.
-  // (x^2 + x + a)*(x^2 + b*x + b^2*a)
-  // Reordering the factors gives 
-  // (x^2 + x + a)*(x^2 + (1/b)*x + a/b^2)
-  // so we only choose b with b < 1/b or b = 1/b.
-
-  // In first case, x --> a*b/x is an involution that switches factors.
-  // In second case we have (x^2 + x + a)*(x^2 - x + a)
-  // so x --> a/x and x --> -x and x --> -a/x are all involutions.
-
-  for a in goodas do
-    polys2211 cat:= [<x*(x^2 + x + a)*(x^2 + b*x + b^2*a), 2, [I,Matrix(2,[0,a*b,1,0])]> : b in K | b ne 0 and b lt 1/b];
-    polys2211 cat:= [<x*(x^2 + x + a)*(x^2 -   x +     a), 4, 
-                    [I,negone,Matrix(2,[0,a,1,0]),Matrix(2,[0,-a,1,0])]>];
-  end for;        
-
-
-  // Next, we have case where one factor has infinite invariant but other
-  // one does not. Put the one with finite invariant first, and scale so
-  // trace is -1.
-  // (x^2 + x + a) * (x^2 - c)  with c nonsquare.
-  // Replacing x with a/x fixes first factor, replaces x^2 - c with  x^2 - a^2/c,
-  // so want c < a^2/c.
-  
-  // If c = a or c = -a then x --> a/x is an involution.
-  
-
-  polys2211 cat:= [<x*(x^2 + x + a)*(x^2 - c), 1, [I]> : a in goodas, c in nonsquares | a^2 ne c^2 and c lt a^2/c];
-  
-  polys2211 cat:= [<x*(x^2 + x + a)*(x^2 - a), 2, [I, Matrix(2,[0,a,1,0])]> : a in goodas | not IsSquare(a)];
-
-  polys2211 cat:= [<x*(x^2 + x + a)*(x^2 + a), 2, [I, Matrix(2,[0,a,1,0])]> : a in goodas | not IsSquare(-a)];
-
-  
-  // Finally, both with infinite invariant.
-  // (x^2 - n)*(x^2 - n*b^2)    where we can assume that b^2 < 1/b^2 or b^2 = 1/b^2.
-  // In all cases, x --> -x  and x --> n*b/x and x --> -n*b/x are involutions.
-  // In first case, no others.
-  // In second case we have b^2 = -1 and  x --> b/x and x --> -b/x are involutions.
-
-  polys2211 cat:= [<x*(x^2 - ns)*(x^2 - ns*b), 4, [I,negone,Matrix(2,[0,ns*Sqrt(b),1,0]),Matrix(2,[0,-ns*Sqrt(b),1,0])]> : b in squares | b lt 1/b];
-
-  if IsSquare(K!-1) then
-    b := Sqrt(K!-1);
-    four := Matrix(2,[b,0,0,1]);
-    auts:=[I,negone,Matrix(2,[0,ns*b,1,0]),Matrix(2,[0,-ns*b,1,0])];
-    newauts := auts;
-    for A in auts do 
-      newauts cat:= [PGLreduce(A*four)];
+        for C in Cs do
+          checksum21111 +:= 1/C[2]; 
+          if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+          if passback then Clist cat:= [C]; end if;
+        end for;
+      end for;
     end for;
-    
-    polys2211 cat:= [<x*(x^2 - ns)*(x^2 + ns), 8, newauts>];
-  end if;
-
-  
-  assert &+[1/m[2] : m in polys2211] eq q*(q^2 - q - 2)/16;
-  return polys2211;
-end function;
-
-
-//------------------------------------------------------------------------------
-
-
-function sixpoints222(K);
-  // K is a finite field of size q = p^e, with p odd.
-  // Return all PGL(2,K) orbits of Galois-stable sextuples
-  // of elements, all six in the degree-2 extension of K.
-
-  // Note that the number of irreducible monic quadratics is (q^2 - q)/2, and
-  // the number of triples of distinct such quadratics is this number choose 3.
-  // Dividing this by the size of PGL(2,q) we get (q - 2)*(q^2 - q - 4)/48.
-  // Therefore, the sum over all representatives of 1 over the 
-  // stabilizer of the representative should be (q - 2)*(q^2 - q - 4)/48.
-  // We check this at the end.
-
-  // Our plan is to use the mu invariant, which distinguishes PGL2 orbits of
-  // products of irreducible quadratics. We start with a list of orbit reps
-  // for PGL2 acting on such products. Given a product q1*q2 on the list, we
-  // run through all possible irreducible quadratics q3. We accept the product
-  // q1*q2*q3 if one of these conditions holds:
-  //  (a) mu(q1*q2) < mu(q1*q3) and mu(q1*q2) < mu(q2*q3)
-  //  (b) mu(q1*q3) = mu(q2*q3) < mu(q1*q2)
-  // If, on the other hand, we have mu(q1*q2) = mu(q1*q3) = mu(q2*q3), then
-  // we put q1*q2*q3 on a list for further consideration. We do this by finding
-  // all ways to move q1*q2*q3 by PGL2 that leave q1 and q2 as factors of the
-  // image, and then choose the smallest.
-    
-
-  q := #K;
-  R<x>:=PolynomialRing(K);
-  I := Matrix(2,[K|1,0,0,1]);
-  polys222 := [];
-
-  // First, get a list of representatives for all products of two irreducible
-  // quadratics under the action of PGL(2,K).
-  
-  products := fourpoints22(K);
-  fproducts := [<[a[1] : a in Factorization(f[1])],f[2],f[3]> : f in products];
-  
-  // Keep track of these by mu-invariant as well. Make an associative array,
-  // indexed by mu, whose entries are sets of indices of our list of products.
-  
-  Mus := AssociativeArray();
-  for i in [1..#fproducts] do
-    mu := mu_invariant(fproducts[i][1][1],fproducts[i][1][2]);
-    Mus[mu] := [i];
   end for;
   
-  // Get a list of all irreducible quadratics.
-  allquads := [x^2 + a*x + b : a,b in K | not IsSquare(a^2 - 4*b)];
+  assert checksum21111 eq q*(q-1)*(q-2)/48;
+
+  // Next, type (2,2,1,1).
   
+  checksum2211 := 0;
+  twoquadratics := fourpoints22(K);
+
+  // twoquadratics contains orbit representatives for PGL(2,K) acting on
+  // products of two distinct irreducible quadratics, and the automorphism
+  // groups of the representatives come from a small set.
+
+  autgroups := Sort([a : a in {m[3] : m in twoquadratics}]);
+
+
+  for A in autgroups do
+    // Compute representatives for pairs of distinct points in P^1(K) under
+    // the action of A. For each rep, multiply the rep by the quartics with
+    // automorphism group A.
+    
+    twoquadraticsA := [z : z in twoquadratics | z[3] eq A];
+    
+    // To make the computation of orbits representatives of A acting on
+    // quadratics more efficient, we precompute some expressions.
+    shortA := [M : M in A | M ne I];
+    rats := [(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]) : M in shortA];
+    mults := [(M[2,1]*x + M[2,2])^2 : M in shortA];
+  
+    for leadterms in [[0,1]] cat [[1,a] : a in K] do
+      for b in K do
+        quadratic := leadterms[1]*x^2 + leadterms[2]*x + b;
+        // Note that this "quadratic" may be linear. 
+        D := Discriminant(quadratic);
+        if D eq 0 then continue b; end if;
+        if not IsSquare(D) then continue b; end if;
+
+        autgroup := [I];
+        for i in [1..#shortA] do
+          g := Numerator(Evaluate(quadratic,rats[i]) * mults[i]);
+          g := g/Coefficient(g,Degree(g));
+          if g lt quadratic then continue b; end if;
+          if g eq quadratic then
+            autgroup cat:= [shortA[i]];
+          end if;
+        end for;
+      
+        checksum2211 +:= #twoquadraticsA/#autgroup;
+
+        for prodquad in twoquadraticsA do
+          f := prodquad[1]*quadratic;
+          if curves then
+            Cs := curves_from_divisor(f,autgroup);
+          else
+            Cs := [<f,#autgroup,autgroup>];
+          end if;
+
+          for C in Cs do
+            if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+            if passback then Clist cat:= [C]; end if;
+          end for;
+        end for;
+      end for;
+    end for;
+  end for;
+          
+  assert checksum2211 eq q*(q+1)*(q-2)/16;
+
+
+  // Next, we turn to Galois type (2,2,2)    
+  checksum222 := 0;  
+    
+  factoredquadratics := [<[a[1] : a in Factorization(f[1])],f[2],f[3]> : f in twoquadratics];
+
   // Create a list of examples that we will need to consider in further
   // detail at the end. These will be products of three quadratics, such that
   // the mu-invariants of all pairs of quadratics are equal.
   
   trickyones := AssociativeArray();
-  
-  
-  autgroups := Sort([a : a in {m[3] : m in products}]);
+
+  autgroups := Sort([a : a in {m[3] : m in factoredquadratics}]);
 
   for A in autgroups do
     // Compute representatives for the irreducible quadratics under the
-    // action of A. 
+    // action of A. Then run through the products of each one with the
+    // elements of fproducts with automorphism group A.
     
-    Aquads := [];
-    for quad in allquads do
-      quadauts := [];
-      orbit := [quad];
-      for M in A do 
-        num := M[1,1]*x + M[1,2];
-        den := M[2,1]*x + M[2,2];
-        g := num^2 + Coefficient(quad,1)*num*den + Coefficient(quad,0)*den^2;
-        g := g/Coefficient(g,2);
-        orbit cat:= [g];
-        if g eq quad then quadauts cat:= [M]; end if;
+    // Make a list of the pairs of quadratics with automorphism group A:
+    
+    factoredquadraticsA := [ <a[1], mu_invariant(a[1][1],a[1][2])> : a in factoredquadratics | a[3] eq A];
+    
+    // To make the computation of orbits representatives of A acting on
+    // quadratics more efficient, we precompute some expressions.
+    shortA := [M : M in A | M ne I];
+    rats := [(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]) : M in shortA];
+    mults := [(M[2,1]*x + M[2,2])^2 : M in shortA];
+
+    for a,b in K do
+      quadratic := x^2 + a*x + b;
+      D := Discriminant(quadratic);
+      if IsSquare(D) then continue b; end if;
+
+      autgroup := [I];
+      for i in [1..#shortA] do
+        g := Numerator(Evaluate(quadratic,rats[i]) * mults[i]);
+        g := g/Coefficient(g,Degree(g));
+        if g lt quadratic then continue b; end if;
+        if g eq quadratic then
+          autgroup cat:= [shortA[i]];
+        end if;
       end for;
-      if quad eq Sort(orbit)[1] then
-        Aquads cat:= [<quad,quadauts>];
-      end if;
-    end for;
-    
-    for i in [1..#fproducts] do
-      ff, n, Ms := Explode(fproducts[i]);
       
-      if Ms eq A then
-    
-        q1, q2 := Explode(ff);
-        f := q1*q2;
-        mu12 := mu_invariant(q1,q2);
+      // OK, we've got a good quadratic. Let's pair it with all the elements
+      // of  factoredquadraticsA.
 
-        // Make a list of the involutions that fix q1 and q2 individually.
-        invlist := [];
-        for M in Ms do
-          num := M[1,1]*x + M[1,2];
-          den := M[2,1]*x + M[2,2];
-          g := Numerator(Evaluate(q1,num/den));
-          if g eq Coefficient(g,2)*q1 then
-            g := Numerator(Evaluate(q2,num/den));
-            if g eq Coefficient(g,2)*q2 then
-              invlist cat:= [M];
-            end if;
-          end if;
-        end for;
-
-    
-        // Run through all irreducible quadratics, up to the automorphisms of f.
-        for quadandauts in Aquads do
-          quad, quadauts := Explode(quadandauts);
-          
-          if not quad in [q1,q2] then
-
-            mu13 := mu_invariant(q1,quad);
-            mu23 := mu_invariant(q2,quad);
+      for quadpair in factoredquadraticsA do
+        q1, q2 := Explode(quadpair[1]);
+        mu12 := quadpair[2];
+        
+        if quadratic in [q1,q2] then continue quadpair; end if;
+        
+        mu13 := mu_invariant(q1,quadratic);
+        mu23 := mu_invariant(q2,quadratic);
        
-            case #{mu12,mu13,mu23}:
-              when 3:
-                if mu12 eq Sort([mu12,mu13,mu23])[1] then
-                  auts := quadauts; //[a : a in quadauts | a in invlist];
-                  polys222 cat:= [<f*quad, #auts, auts>];
-                end if;
+        keepit := false;
+        case #{mu12,mu13,mu23}:
+          when 3:
+            if mu12 eq Sort([mu12,mu13,mu23])[1] then
+              keepit := true;
+            end if;
 
-              when 2:
-                if mu13 eq mu23 then
-                  auts := quadauts;
-                  polys222 cat:= [<f*quad, #auts, auts>];
-                end if;
+          when 2:
+            if mu13 eq mu23 then
+              keepit := true;
+            end if;
 
-              when 1:
-                // The trickiest case. Postpone analysis.
-                if mu12 in Keys(trickyones) then
-                  trickyones[mu12] cat:= [<q1,q2,quad>];
-                else
-                 trickyones[mu12] := [<q1,q2,quad>];
-                end if;
-            end case;
+          when 1:
+            // The trickiest case. Postpone analysis.
+            if mu12 in Keys(trickyones) then
+              trickyones[mu12] cat:= [<q1,q2,quadratic>];
+            else
+              trickyones[mu12] := [<q1,q2,quadratic>];
+            end if;
+        end case;
+            
+        if keepit then
+          f := q1*q2*quadratic;
+          if curves then
+            Cs := curves_from_divisor(f,autgroup);
+          else
+            Cs := [<f,#autgroup,autgroup>];
           end if;
-        end for;
-      end if;
+
+          for C in Cs do
+            checksum222 +:= 1/C[2]; 
+            if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+            if passback then Clist cat:= [C]; end if;
+          end for;
+        end if;
+      end for;
     end for;
   end for;
-  
+
+
   // OK. Now we are left with the tricky ones.
+  // A quick side note: We claim that we can do all this in O(q) memory.
+  // So we need to know that there are O(q) tricky ones! 
+  // If (q1,q2,q3) is tricky, then there are elements alpha1 and alpha2 of PGL2
+  // such that alpha1 takes q1*q2 to q1*q3 and alpha2 takes q1*q2 to q2*q3.
+  // This means there are beta1 and beta2 in PGL2 such that beta1 fixes q1 and
+  // sends q2 to q3, and beta2 fixes q2 and sends q1 to q3.
+  // We can show that over an algebraically closed field, for every pair of
+  // disjoint degree-2 reduced effective divisors D1 and D2, there are at most
+  // two degree-2 reduced effective divisors D3 such that there is an element of
+  // PGL2 that fixes D1 and sends D2 to D3 and an element of PGL2 that fixes D2
+  // and sends D1 to D3. Therefore, for each mu invariant, we get at most two
+  // tricky ones *up to isomorphism over the algebraic closure*, but the number
+  // of possible twists is bounded independent of q. So the total number of 
+  // tricky ones is O(q).
+  
   for mu in Keys(trickyones) do
     taken := [];
     for t in trickyones[mu] do
@@ -2268,41 +1864,91 @@ function sixpoints222(K);
       f := Min(images);
       if not f in taken then
         taken cat:= [f];
-        bool, autos := isomorphisms222(f,f);
-        polys222 cat:= [<f, #autos, autos>];
+        bool, autgroup := isomorphisms222(f,f);
+
+        if curves then
+          Cs := curves_from_divisor(f,autgroup);
+        else
+          Cs := [<f,#autgroup,autgroup>];
+        end if;
+
+        for C in Cs do
+          checksum222 +:= 1/C[2]; 
+          if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+          if passback then Clist cat:= [C]; end if;
+        end for;
+
       end if;
     end for;
   end for;
 
-  assert  &+[1/m[2] : m in polys222] eq (q - 2)*(q^2 - q - 4)/48;
-  return polys222;
+  assert checksum222 eq (q - 2)*(q^2 - q - 4)/48;
+
+  if outputfile ne "" then
+    UnsetOutputFile();
+  end if;
+
+  return Clist;
 end function;
+
 
 //------------------------------------------------------------------------------
 
-function sixpoints3111(K);
+function genustwo3x(K : passback := true, curves := true, output := false, outputfile := "")
   // K is a finite field of size q = p^e, with p odd.
-  // Return all PGL(2,K) orbits of Galois-stable sextuples
-  // of elements, three in the degree-3 extension of K and the
-  // rest in P^1(K).
+  // Compute representatives of either
+  //    (a) all isomorphism classes of genus-2 curves over K with Weierstrass
+  //        divisor of Galois type (3, ...)
+  //    (b) all PGL(2,K) orbits of divisors of P^1 of Galois type (3, ...),
+  // depending on whether curves = true or curves = false.
+  
+  // If passback = true, we return the set of representatives; otherwise we
+  // return an empty list.
+  
+  // If output = true, we print the representatives as they are computed.
+  // We print to standard out if outputfile = ""; otherwise, we print to 
+  // the named file.
+  
+  // In any case, the sum, over all representatives of a given Galois type, of 1
+  // over the size of the automorphism group of the representative should be as
+  // follows:
+  
+  // Galois type (3,1,1,1): (q+1)*q*(q-1)    /18
+  // Galois type (3,2,1):   (q+1)*q*(q-1)    / 6
+  // Galois type (3,3):     (q^3-q-3)        /18
 
-  // Note that the number of irreducible monic cubics is (q^3 - q)/3 and the
-  // number of triples of distinct elements of P^1(K) is (q^3 - q)/6. Dividing 
-  // the product of these  by the size of PGL(2,q) we get (q^3 - q)/18.
-  // Therefore, the sum over all representatives of 1 over the 
-  // stabilizer of the representative should be (q^3 - q)/18.
   // We check this at the end.
+  
+  // We include the size of the automorphism group of each representative as 
+  // part of the output. If we are passing back a list, we include the
+  // automorphism group itself, as well.
+  
+  if outputfile ne "" then
+    SetOutputFile(outputfile);
+  end if;
 
-
+  Clist := [];
   q := #K;
   R<x>:=PolynomialRing(K);
+  P1 := [1] cat [x-a : a in K];
+  ns := nonsquare(K);
   basecubic := irreducible3(K);
-  
+
+  I := Matrix(2,[K|1,0,0,1]);
+  T := Matrix(2,[K|0,-1, 1,-1]);
+
+  // Galois type (3,1,1,1):
+  checksum3111 := 0;
+
   // First, make a list of the orbits of P^1(K) under the action that
-  // sends x to 1/(1-x). Don't include infinity. The method depends on
-  // q mod 3...
+  // sends x to 1/(1-x). We represent elements a of K by the polynomial x-a,
+  // and we represent the point at infinity by the polynomial 1.
+  // IT IS IMPORTANT THAT THE SINGLETON ORBITS (if any) OCCUR AT THE END 
+  // OF THE LIST.
   
-  orbitlist := [[K|0,1]];
+  // The method depends on q mod 3...
+  
+  orbitlist := [[x,x-1,1]];
   
   case q mod 3:
     when 1:
@@ -2312,9 +1958,10 @@ function sixpoints3111(K);
       for i in [1..((q-1) div 3) - 1] do
         b *:= g;
         a := (-zeta*b + zeta^2)/(b-1);
-        orbitlist cat:= [[a,1/(1-a),(a-1)/a]];
+        orbitlist cat:= [[x-a,x-1/(1-a),x-(a-1)/a]];
       end for;
-      orbitlist cat:= [ [-zeta], [-zeta^2] ];
+      // Plus the two singleton orbits:
+      orbitlist cat:= [ [x+zeta], [x+zeta^2] ];
 
     when 2:
       L := ext<K|2>;
@@ -2325,7 +1972,7 @@ function sixpoints3111(K);
       for i in [1..((q+1) div 3) - 1] do
         b *:= h;
         a := K!((-zeta*b + zeta^2)/(b-1));
-        orbitlist cat:= [[a,1/(1-a),(a-1)/a]];
+        orbitlist cat:= [[x-a,x-1/(1-a),x-(a-1)/a]];
       end for;
 
     when 0:
@@ -2338,20 +1985,21 @@ function sixpoints3111(K);
       for b in K do 
         if b ne 0 and Trace(b) eq 0 then
           a := (t - b)/b;
-          orbitlist cat:= [[a,1/(1-a),(a-1)/a]];
+          orbitlist cat:= [[x-a,x-1/(1-a),x-(a-1)/a]];
         end if;
       end for;
-      orbitlist cat:= [[K|-1]];
+      // Plus the one singleton orbit
+      orbitlist cat:= [[x+1]];
   end case;
-
-  I := Matrix(2,[K|1, 0, 0, 1]);
-  T := Matrix(2,[K|0,-1, 1,-1]);
-  
-  polys3111 := [];
   
   // First, points from 3 distinct orbits.
   // Choose first point in first orbit, then run through all points
-  // in second and third orbits.
+  // in second and third orbits. Note that the first orbit must have
+  // three elements in it because the smaller orbits occur last. Therefore
+  // choosing the first element of the first orbit really does eliminate
+  // automorphisms.
+  
+  autgroup := [I];
   
   for i in [1..#orbitlist-2] do
     a := orbitlist[i][1];
@@ -2361,7 +2009,20 @@ function sixpoints3111(K);
         for k in [j+1..#orbitlist] do
           for withink in [1..#orbitlist[k]] do
             c := orbitlist[k][withink];
-            polys3111 cat:= [<basecubic*(x-a)*(x-b)*(x-c), 1, [I]>];
+            f := basecubic*a*b*c;
+         
+            if curves then
+              Cs := curves_from_divisor(f,autgroup);
+            else
+              Cs := [<f,#autgroup,autgroup>];
+            end if;
+
+            for C in Cs do
+              checksum3111 +:= 1/C[2]; 
+              if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+              if passback then Clist cat:= [C]; end if;
+            end for;
+
           end for;
         end for;
       end for;
@@ -2370,73 +2031,78 @@ function sixpoints3111(K);
   
   // Next, two points in one orbit and third point in a different one.
   // Choose the first two points of the orbit with two, and let the
-  // third point range over all other orbits. We have to explicitly add
-  // in infinity for the third point.
-  
+  // third point range over all points in all other orbits. 
+
   for i in [1..#orbitlist] do
     orbit := orbitlist[i];
     if #orbit gt 1 then
       a := orbit[1]; 
       b := orbit[2];
-      if not a in {K|0,1} then
-        polys3111 cat:= [<basecubic*(x-a)*(x-b), 1, [I]>];
-      end if;
-      for c in K do 
+      for c in P1 do 
         if not c in orbit then
-          polys3111 cat:= [<basecubic*(x-a)*(x-b)*(x-c), 1, [I]>];
+          f := basecubic*a*b*c;
+         
+          if curves then
+            Cs := curves_from_divisor(f,autgroup);
+          else
+            Cs := [<f,#autgroup,autgroup>];
+          end if;
+
+          for C in Cs do
+            checksum3111 +:= 1/C[2]; 
+            if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+            if passback then Clist cat:= [C]; end if;
+          end for;
+
         end if;
       end for;
     end if;
   end for;
   
   // Finally, all three points in the same orbit.
+  autgroup := [I,T,T^2];
   
   for i in [1..#orbitlist] do
     orbit := orbitlist[i];
     case #orbit:
       when 1: ;
-      when 2: polys3111 cat:= [<basecubic*(x-orbit[1])*(x-orbit[2]),              3, [I,T,T^2]>];
-      when 3: polys3111 cat:= [<basecubic*(x-orbit[1])*(x-orbit[2])*(x-orbit[3]), 3, [I,T,T^2]>];
+      when 3: 
+        f := basecubic*orbit[1]*orbit[2]*orbit[3];
+
+        if curves then
+          Cs := curves_from_divisor(f,autgroup);
+        else
+          Cs := [<f,#autgroup,autgroup>];
+        end if;
+
+        for C in Cs do
+          checksum3111 +:= 1/C[2]; 
+          if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+          if passback then Clist cat:= [C]; end if;
+        end for;
     end case;
   end for;
   
-  assert &+[1/m[2] : m in polys3111] eq (q^3 - q)/18;
-  return polys3111;
-end function;
+  assert checksum3111 eq (q^3 - q)/18;
 
-//------------------------------------------------------------------------------
+  // Now, Galois type (3,2,1).
 
-function sixpoints321(K);
-  // K is a finite field of size q = p^e, with p odd.
-  // Return all PGL(2,K) orbits of Galois-stable sextuples
-  // of elements, three in the degree-3 extension of K, two in the degree-2
-  // extension, and one in P^1(K).
-
-  // Note that the number of irreducible monic cubics is (q^3 - q)/3, the
-  // number of irreducible monic quadratics is (q^2-q)/2, and the number of
-  // elements of P^1(K) is q + 1. Dividing the product of these by the size 
-  // of PGL(2,q) we get (q^3 - q)/6.
-  // Therefore, the sum over all representatives of 1 over the 
-  // stabilizer of the representative should be (q^3 - q)/6.
-  // We check this at the end.
-
-
-  q := #K;
-  R<x>:=PolynomialRing(K);
-  basecubic := irreducible3(K);
-  ns := nonsquare(K);
-  I := Matrix(2,[K|1,0,0,1]);
+  checksum321 := 0;
   
   // If q = 2 mod 3 then make a list of representatives for the orbits of P^1(K)
-  // under the action that sends x to 1/(1-x). 
+  // under the action that sends x to 1/(1-x). We represent the elements of
+  // P^1(K) by monic polynomials of degree 1 and 0.
   // If q = 0 mod 3 or q = 1 mod 3, make a similar list of representatives, but
   // instead for orbits of monic irreducible quadratics.
-
-  polys321 := [];
+  
+  // The point of the two cases is that in each case, we are listing orbits of 
+  // a fixed-point free action.
+  
+  autgroup := [I];
 
   case q mod 3:
     when 2:
-      linearorbitreps := [K|0];
+      linearorbitreps := [R!1];
       L := ext<K|2>;
       g := PrimitiveElement(L);
       zeta := g^((q^2-1) div 3);
@@ -2445,23 +2111,37 @@ function sixpoints321(K);
       for i in [1..((q+1) div 3) - 1] do
         b *:= h;
         a := K!((-zeta*b + zeta^2)/(b-1));
-        linearorbitreps cat:= [a];
+        linearorbitreps cat:= [x-a];
       end for;
 
       // Now to enumerate all irreducible quadratics.
-      
 
       for c in K do 
         if c ne 0 and c lt -c then
           for a in K do
             quad := x^2 + 2*a*x + a^2 - c^2*ns;
-            polys321 cat:= [<basecubic*quad*(x-b), 1, [I]> : b in linearorbitreps];
+            partialf := basecubic*quad;
+            
+            for b in linearorbitreps do
+              f := partialf*b;
+
+              if curves then
+                Cs := curves_from_divisor(f,autgroup);
+              else
+                Cs := [<f,#autgroup,autgroup>];
+              end if;
+
+              for C in Cs do
+                checksum321 +:= 1/C[2]; 
+                if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+                if passback then Clist cat:= [C]; end if;
+              end for;
+            end for;      
           end for;
         end if;
       end for;
 
     when 1:
-      quadorbitreps := [];
       L := ext<K|2>;
       gen := PrimitiveElement(L);
       onethird := (q^2-1) div 3;
@@ -2473,13 +2153,26 @@ function sixpoints321(K);
           // In this case b is not an element of K (first condition) and
           // we have not already considered its conjugate (second condition)
           a := (-zeta*b + zeta^2)/(b-1);
-          quadorbitreps cat:= [MinimalPolynomial(a,K)];
-        end if;
-      end for;
+          quad := MinimalPolynomial(a,K);
+          
+          // Now process this quadratic.
+          partialf := basecubic*quad;
+          for a in P1 do
+            f := partialf*a;
 
-      for quad in quadorbitreps do
-        polys321 cat:= [<basecubic*quad, 1, [I]>]; // Infinity
-        polys321 cat:= [<basecubic*quad*(x-a), 1, [I]> : a in K];
+            if curves then
+              Cs := curves_from_divisor(f,autgroup);
+            else
+              Cs := [<f,#autgroup,autgroup>];
+            end if;
+
+            for C in Cs do
+              checksum321 +:= 1/C[2]; 
+              if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+              if passback then Clist cat:= [C]; end if;
+            end for;
+          end for;
+        end if;
       end for;
 
     when 0:
@@ -2494,1019 +2187,946 @@ function sixpoints321(K);
       for b in L do 
         if b lt b^q and Trace(b) eq 0 then
           a := (t - b)/b;
-          quadorbitreps cat:= [MinimalPolynomial(a,K)];
-        end if;
-      end for;
+          quad := MinimalPolynomial(a,K);
+          
+          // Now process this quadratic.
+          partialf := basecubic*quad;
+          for a in P1 do
+            f := partialf*a;
 
-      for quad in quadorbitreps do
-        polys321 cat:= [<basecubic*quad, 1, [I]>]; // Infinity
-        polys321 cat:= [<basecubic*quad*(x-a), 1, [I]> : a in K];
+            if curves then
+              Cs := curves_from_divisor(f,autgroup);
+            else
+              Cs := [<f,#autgroup,autgroup>];
+            end if;
+
+            for C in Cs do
+              checksum321 +:= 1/C[2]; 
+              if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+              if passback then Clist cat:= [C]; end if;
+            end for;
+          end for;
+        end if;
       end for;
 
   end case;
   
-  assert &+[1/m[2] : m in polys321] eq (q^3 - q)/6;
-  return polys321;
-end function;
+  assert checksum321 eq (q^3 - q)/6;
 
-//------------------------------------------------------------------------------
+  // Galois type (3,3):
 
+  // The algorithm we implement here is not what is described in [Howe2025], 
+  // although it is conceptually related. In the paper, we suggest fixing an
+  // irreducible base cubic f1, and then looping through all irreducible cubics
+  // f2 that are distinct from f1. Then we accept f1*f2 if it is the smallest 
+  // element of the set {M(f1*f2)}, where M ranges over the elements of 
+  // PGL(2,K) that either take the roots of f1 to themselves, or take the roots
+  // of f2 to those of f1.
 
-function sixpoints33(K)
-  // K is a finite field of size q = p^e, with p odd.
-  // Return all PGL(2,K) orbits of Galois-stable sextuples
-  // of elements, all 6 in the degree-3 extension of K.
+  // Computing the M that take f2 to f1 requires a fair amount of computation.
+  // Instead, what we implement here loops over the elements M of PGL(2,K) and
+  // sets f2 = M(f1). Given such an element M, there are 17 other elements of
+  // PGL(2,K) that give a product f1*f3 that is in the same PGL(2,K) orbit as
+  // f1*f2. These elements are A*M*B and A*M^-1*B, where A and B range over 
+  // the automorphisms of f1. So we want only to consider M that are 
+  // distinguished in the set of 18 "partner matrices" in this orbit.
 
-  // Note that the number of irreducible monic cubics is (q^3 - q)/3 and the
-  // number of pairs of distinct such is (q^3 - q)*(q^3 - q - 3)/18. Dividing 
-  // by the size of PGL(2,q) we get (q^3 - q - 3)/18.
-  // Therefore, the sum over all representatives of 1 over the 
-  // stabilizer of the representative should be (q^3 - q - 3)/18.
-  // We check this at the end.
+  // Note that we choose f1 so that its automorphisms are the identity A1,
+  // together with A2 = [0,-1;1,-1] and A3 = [1,-1;1,0].
 
-  q := #K;
-  R<x>:=PolynomialRing(K);
-  basecubic := irreducible3(K);
+  // We consider two types of M: First, the M all of whose partner matrices
+  // have nonzero trace, and second, the M that have a partner matrix with 
+  // trace 0.
+
+  // For the first type, we normalize all of the partner matrices so that 
+  // they have trace 1. If M = [a,b;c,d] with a+d=1, then the set of 
+  // determinants of these normalized matrices is {D, D/(b - c - d)^2,
+  // D/(a + b - c)^2}, where D = a*d-b*c. 
+
+  // In characteristic 3 with M of the form [a,b;a+b+1,1-a], we just list
+  // all 18 partner matrices and make sure M is the smallest.
+
+  // In characteristic not 3, or in charaacteristic 3 if M is not of the
+  // form [a,b;a+b+1,1-a], then this set of discriminants has at least two
+  // distinct elements. We do not accept M unless either
+  //   * there are three distinct values, and the determinant of M is
+  //     the smallest, or
+  //   * there are two distinct values, and the determinant of M is the
+  //     non-repeated value.
+
+  // Suppose M passes this test. There are six partner matrices with this
+  // same determinant, and they are [a', b'; c', 1-a'] with the triple
+  // (b',c',a') being one of the following:
   
-  // This cubic is stable under the action of x --> 1/(1-x).
+  // [       b        ,            c    ,  a        ]
+  // [      -b        ,           -c    , -a     + 1]
+  // [           c    ,  2*a + b - c - 1,  a - c    ]
+  // [          -c    , -2*a - b + c + 1, -a + c + 1]
+  // [ 2*a + b - c - 1,       -b        , -a - b + 1]
+  // [-2*a - b + c + 1,        b        ,  a + b    ]
 
-  matlist := [];
+  // And we simply check that [b,c,a] is the smallest of these
+  // (lexicographically). If we loop through values of b first, then c,
+  // then a, we can make sure that -b is at least as big as b, and that 
+  // c and -c are at least as big as b, and that the values of a we loop
+  // through satisfiy b <= 2*a + b - c - 1 and b <= -2*a - b + c + 1.
+  // If equality holds in any of these, then we do the full comparison
+  // of [b,c,a] with the the associated triple.
+
+  // Next we turn to elements M of PGL(2,K) whose set of partner matrices
+  // include ones with trace 0. We check that every such set of partner
+  // matrices contains one that has trace 0 and that has nonzero diagonal
+  // elements. Thus we can normalize M so that it is of the form [1,b;c,-1].
+
+  // Given such an M, the partner matrices that also have trace 0 and 
+  // nonzero diagonal elements are [1,b';c',-1] with (b',c') one of the
+  // following:
+  // [b,c]
+  // [c/(1-c), (b-c+2)/(1-c)]  if c-1 is nonzero
+  // [(c-b-2)/(b+1), b/(b+1)]  if b+1 is nonzero
+
+  // So we just check whether [b,c] is the smallest of these.
+
+  // -----
+
+  // That gives us the set of M to consider. For the automorphism groups,
+  // we check the automorphisms {A1,A2,A3] of f1 are automorphisms of
+  // f1*f2 exactly when A2*M = M*A2 or M*A3. We check that this happens
+  // exactly when M is of the form [c+d,-c;c,d] or [-d,c+d;c,d].
+
+  // And we check that f1*f2 has an automorphism of order 2 if and only 
+  // if one of the partner matrices has trace 0.
+
+
+  checksum33 := 0;
+
+  A1 := Matrix(2,[K|1,0,0,1]);
+  A2 := Matrix(2,[K|0,-1,1,-1]);
+  A3 := Matrix(2,[K|1,-1,1,0]);
   
-  for a in K do
-    if not a in {K|0,1} and a eq Sort([a,(a - 1)/a,-1/(a - 1)])[1] then
-      for d in K do
-        if not d in {K|0,-1} and a eq Sort([a,-d,(d + 1)/d,1/(d + 1)])[1] then
-          for b in K do
-            if not b in {a*d, 0, d+1-a, -a, d} then
-              biglist := [a, (a - 1)/a, -1/(a - 1),
-                          -d, (d + 1)/d, 1/(d + 1),
-                          b/d, (b - d)/b, -d/(b - d),
-                          -b/a, (a + b)/b, a/(a + b),
-                          (a + b)/(d + 1), (-d - 1)/(a + b - d - 1), (a + b - d - 1)/(a + b),
-                          (-b + d)/(a - 1), (a - 1)/(a + b - d - 1), (a + b - d - 1)/(b - d)];
-              Sort(~biglist);
-              numequiv := #Set(biglist);
-              if a ne biglist[1] then continue b; end if;
-              if a eq biglist[2] then
-                // Extra checking required.
-                biggerlist := [
-                    [ a , b , 1 , d ],
-                    [ b/d , (-a - b)/d , 1 , (-d - 1)/d ],
-                    [ (a + b)/(d + 1) , -a/(d + 1) , 1 , -1/(d + 1) ],
-                    [ -1/(a - 1) , -d/(a - 1) , 1 , (b - d)/(a - 1) ],
-                    [ -d/(b - d) , (d + 1)/(b - d) , 1 , (-a - b + d + 1)/(b - d) ],
-                    [ (-d - 1)/(a + b - d - 1) , 1/(a + b - d - 1) , 1 , (-a + 1)/(a + b - d - 1) ],
-                    [ (a - 1)/a , (b - d)/a , 1 , b/a ],
-                    [ (b - d)/b , (-a - b + d + 1)/b , 1 , (-a - b)/b ],
-                    [ (a + b - d - 1)/(a + b) , (-a + 1)/(a + b) , 1 , -a/(a + b) ],
-                    [ -d , b , 1 , -a ],
-                    [ (d + 1)/d , (-a - b)/d , 1 , -b/d ],
-                    [ 1/(d + 1) , -a/(d + 1) , 1 , (-a - b)/(d + 1) ],
-                    [ (-b + d)/(a - 1) , -d/(a - 1) , 1 , 1/(a - 1) ],
-                    [ (a + b - d - 1)/(b - d) , (d + 1)/(b - d) , 1 , d/(b - d) ],
-                    [ (a - 1)/(a + b - d - 1) , 1/(a + b - d - 1) , 1 , (d + 1)/(a + b - d - 1) ],
-                    [ -b/a , (b - d)/a , 1 , (-a + 1)/a ],
-                    [ (a + b)/b , (-a - b + d + 1)/b , 1 , (-b + d)/b ],
-                    [ a/(a + b) , (-a + 1)/(a + b) , 1 , (-a - b + d + 1)/(a + b) ]];
-                Sort(~biggerlist);
-                numequiv := #Set(biggerlist);
-                if [a,b,1,d] ne biggerlist[1] then continue b; end if;
-              end if;
-              checkauts := (numequiv le 9);
-              matlist cat:= [<[a,b,1,d],checkauts>];
-            end if;
-          end for;
-        end if;
-      end for;
-    end if;
-  end for;
-  
-  for a in K do 
-    if a ne 0 and a ne 1 and a eq Sort([a,1/a])[1] then
-      for b in K do 
-        if not b in {1,-a,1-a} then
-          matlist cat:= [<[a,b,0,1], true>];
-        end if;
-      end for;
-    end if;
-  end for;
-  
-  for a in K do
-    if a ne 0 then
-      matlist cat:= [<[a,1,0,1],true>];
-    end if;
-  end for;
-  
+  // First will look at trace-1 matrices with a + b - c - 1 and a + b - c nonzero.
+  // These are exactly the ones that gives sets with no involutions.
+
   for b in K do 
-    if b ne 0 and b ne 1 and b eq Sort([b,-b])[1] then
-      matlist cat:= [<[1,b,0,1],true>];
-    end if;
-  end for;
+    if b le -b then
+      flagb := (b eq -b);
+      for c in K do
+        if b le c and b le -c then
+          flagc1 := (b eq c);
+          flagc2 := (b eq -c);
+          bada1 := c-b;
+          bada2 := c-b+1;
+          for a in K do
+            if a ne bada1 and a ne bada2 and b le 2*a + b - c - 1 and b le -2*a - b + c + 1 then
+              // Check that determinant is nonzero and that we aren't taking the 
+              // base cubic to itself.
+              d := 1-a;
+              det := a*d-b*c;
+              
+              if det ne 0 and (a ne d or b ne 0 or c ne 0) and [a,b,c,d] ne [1,-1,1,0] and [a,b,c,d] ne [0,1,-1,1] then
+                 // Check that determinant is correct.
+              
+                n1 := (b - c - d)^2;
+                n2 := (a + b - c)^2;
+
+                invdet := 1/(a*d-b*c);              
+                if n1 eq n2 or (invdet lt n1*invdet and invdet lt n2*invdet) then
+
+                  // In characteristic 3, there is a 2-parameter family of M
+                  // such that the 3 determinants are equal.
+                  // [a, b; a+b+1, 1-a].
+                  // So we want to check that [b,c] is smallest of the corresponding
+                  // pairs of elements of the partner matrices.
+
+                  if c eq a+b+1 and 0 eq q mod 3 then
+                    equivalentM := [
+                                     [      b    ,  a + b + 1 ],
+                                     [      b + 1,  a + b     ],
+                                     [      b - 1,  a + b - 1 ],
+                                     [     -b    , -a - b - 1 ],
+                                     [     -b + 1, -a - b + 1 ],
+                                     [     -b - 1, -a - b     ],
+                                     [  a        ,     -b + 1 ],
+                                     [  a     + 1,     -b     ],
+                                     [  a     - 1,     -b - 1 ],
+                                     [  a + b    ,  a     - 1 ],
+                                     [  a + b + 1,  a     + 1 ],
+                                     [  a + b - 1,  a         ],
+                                     [ -a        ,      b - 1 ],
+                                     [ -a     + 1,      b + 1 ],
+                                     [ -a     - 1,      b     ],
+                                     [ -a - b    , -a     + 1 ],
+                                     [ -a - b + 1, -a         ],
+                                     [ -a - b - 1, -a     - 1 ]
+                                   ];
+                    if not [b,c] eq Sort(equivalentM)[1] then continue a; end if;                                   
+                  end if;
+
+                  flaga1 := (b eq  2*a + b - c - 1);
+                  flaga2 := (b eq -2*a - b + c + 1);
+              
+                  // Do we need further checks for whether we have a distinguished M?
+                  if flagb then
+                    // compare [b,c,a] to [-b,-c,1-a]
+                    if c gt -c or (c eq -c and a gt 1-a) then
+                      continue a;
+                    end if;
+                  end if;
+                  if flagc1 then
+                    // compare [b,c,a] to [c, 2*a + b - c - 1, a-c]
+                    if c gt 2*a + b - c - 1 or (c eq 2*a + b - c - 1 and a gt a - c) then
+                      continue a;
+                    end if;
+                  end if;
+                  if flagc2 then
+                    // compare [b,c,a] to [-c, -2*a - b + c + 1, -a + c + 1]
+                    if c gt -2*a - b + c + 1 or (c eq -2*a - b + c + 1 and a gt -a + c + 1) then
+                      continue a;
+                    end if;
+                  end if;
+                  if flaga1 then
+                    // compare [b,c,a] to [2*a + b - c - 1, -b, -a - b + 1]
+                    if c gt -b or (c eq -b and a gt -a - b + 1) then
+                      continue a;
+                    end if;
+                  end if;
+                  if flaga2 then
+                    // compare [b,c,a] to [-2*a - b + c + 1, b, a + b]
+                    if c gt b or (c eq b and a gt a+b) then
+                      continue a;
+                    end if;
+                  end if;
+              
+                  // We have a good one! And we know it has no involutions.
+
+                  newcubic := Numerator(Evaluate(basecubic,(-d*x+b)/(c*x-a))*(c*x-a)^3);
+                  newcubic := newcubic/Coefficient(newcubic,3);
+                  f := basecubic*newcubic;
+
+                  // Only elements of PGL2 with nonzero trace that give automorphisms
+                  // of order 3 are of the form [c+d, -c, c, d], so condition is that
+                  // a = c + d and b + c = 0.
   
-  I := Matrix(2,[K|1,0,0,1]);
-  T := Matrix(2,[K|0,-1,1,-1]);
+                  if (a eq c + d and b + c eq 0) then
+                    autgroup := [I, A2, A3];
+                  else
+                    autgroup := [I];
+                  end if;
+
+                  if curves then
+                    Cs := curves_from_divisor(f,autgroup);
+                  else
+                    Cs := [<f,#autgroup,autgroup>];
+                  end if;
   
-  polys33 := [];
-  
-  for pair in matlist do
-    mat := pair[1];
-    num := mat[1]*x + mat[2];
-    den := mat[3]*x + mat[4];
-    g := Numerator(Evaluate(basecubic,num/den)*den^3);
-    g := g / Coefficient(g,3);
-    
-    check := pair[2];
-    if not check then 
-      polys33 cat:= [<basecubic*g, 1, [I]>];
-      continue pair;
-    end if;
-    
-    auts := [I];
-    autsize := 1;
+                  for C in Cs do
+                    checksum33 +:= 1/C[2]; 
+                    if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+                    if passback then Clist cat:= [C]; end if;
+                  end for;
 
-    M := Matrix(2,mat);
-    if T*M eq M*T or T*M eq M*T^2 then
-      auts cat:= [T,T^2];
-      autsize *:= 3;
-    end if;
-    if Trace(M) eq 0 then
-      auts cat:= [M*A : A in auts];
-      autsize *:= 2;
-    elif Trace(T*M) eq 0 then
-      N := PGLreduce(T*M);
-      auts cat:= [N*A : A in auts];
-      autsize *:= 2;
-    elif Trace(T^2*M) eq 0 then
-      N := PGLreduce(T^2*M);
-      auts cat:= [N*A : A in auts];
-      autsize *:= 2;
-    end if;
-        
-    polys33 cat:= [<basecubic*g, autsize, auts>];
-  end for;
-  
-  assert &+[1/m[2] : m in polys33] eq (q^3 - q - 3)/18;
-  return polys33;
-end function;
-
-//------------------------------------------------------------------------------
-
-
-function sixpoints411(K);
-  // K is a finite field of size q = p^e, with p odd.
-  // Return all PGL(2,K) orbits of Galois-stable sextuples
-  // of elements, 4 in the degree-4 extension of K and 2 in K.
-  
-  // Note that the number of irreducible monic quartics is (q^4 - q^2)/4 and the
-  // number of pairs of distinct rational points on P^1 is q*(q+1)/2. Dividing
-  // the product of  these by the size of PGL(2,q) we get q^2 * (q + 1)/8.
-  // Therefore, the sum over all representatives of 1 over the 
-  // stabilizer of the representative should be q^2 * (q + 1)/8.
-  // We check this at the end.
-
-  q := #K;
-  ns := nonsquare(K);
-  R<x>:=PolynomialRing(K);
-  
-  quartics := fourpoints4(K : ns := ns);
-  quadratics1 := quadraticreps(K,  1, "split");
-  quadratics2 := quadraticreps(K, ns, "split");
-  
-  polys411 := [];
-  
-  I := Matrix(2,[K|1,0,0,1]);
-  
-  for four in quartics do
-    f, n, auts := Explode(four);
-    aut := auts[2];
-    
-    if n eq 2 then
-      involution := aut;
-    else
-      involution := aut*aut;
-    end if;
-
-    v := involution[1,2]/involution[2,1];
-    
-    if n eq 2 then
-      if v eq 1 then
-        polys411 cat:= [<f*quad[1], 1, [I]> : quad in quadratics1 | quad[2] eq 1];
-        polys411 cat:= [<f*quad[1], 2, [I, aut]> : quad in quadratics1 | quad[2] eq 2];
-      else
-        polys411 cat:= [<f*quad[1], 1, [I]> : quad in quadratics2 | quad[2] eq 1];
-        polys411 cat:= [<f*quad[1], 2, [I, aut]> : quad in quadratics2 | quad[2] eq 2];
-      end if;
-    else
-      // Our quartic has an automorphism alpha of order 4.
-
-      if v eq 1 then
-        quadratics := [quad[1] : quad in quadratics1];
-      else
-        quadratics := [quad[1] : quad in quadratics2];
-      end if;
-      
-      alphanum := (aut[1,1]*x + aut[1,2]);
-      alphaden := (aut[2,1]*x + aut[2,2]);
-
-      for quad in quadratics do
-        g := quad;
-        orbit := {g};
-        for i in [1..3] do
-          g := Numerator(Evaluate(g,alphanum/alphaden)*alphaden^2);
-          g := g / Coefficient(g,Degree(g));
-          orbit join:= {g};
-        end for;
-        
-        reps := [g : g in orbit | g in quadratics];
-
-        if quad eq Sort(reps)[1] then
-          // Continue processing, we've got the primary representative.
-          case #orbit:
-            when 1:
-              // The quadratic is fixed by all four automorphisms of the quartic.
-              polys411 cat:= [<f*quad, 4, [aut^i : i in [0..3]]>];
-            when 2:
-              // The quadratic is fixed by the quartic's involution but that's all.
-              polys411 cat:= [<f*quad, 2, [I, involution]>];
-            when 4:
-              // The quadratic is not fixed by any nontrivial automorphism of the quartic.
-              polys411 cat:= [<f*quad, 1, [I]>];
-          end case;
-        end if;
-      end for;            
-      
-    end if;
-  end for;
-
-  assert &+[1/m[2] : m in polys411] eq q^2 * (q + 1)/8;
-  return polys411;
-end function;
-
-
-//------------------------------------------------------------------------------
-
-function sixpoints42(K);
-  // K is a finite field of size q = p^e, with p odd.
-  // Return all PGL(2,K) orbits of Galois-stable sextuples
-  // of elements, 4 in the degree-4 extension of K and 2 in the 
-  // quadratic extension of K.
-  
-  // Note that the number of irreducible monic quartics is (q^4 - q^2)/4 and the
-  // number of monic irreducible quadratics is (q^2 - q)/2. Dividing the product
-  // of  these by the size of PGL(2,q) we get q^2 * (q - 1)/8.
-  // Therefore, the sum over all representatives of 1 over the 
-  // stabilizer of the representative should be q^2 * (q - 1)/8.
-  // We check this at the end.
-  
-  q := #K;
-  ns := nonsquare(K);
-  R<x>:=PolynomialRing(K);
-  
-  quartics := fourpoints4(K : ns := ns);
-  quadratics1 := quadraticreps(K,  1, "irreducible");
-  quadratics2 := quadraticreps(K, ns, "irreducible");
-  
-  polys42 := [];
-  
-  I := Matrix(2,[K|1,0,0,1]);
-  
-  for four in quartics do
-    f, n, auts := Explode(four);
-    aut := auts[2];
-    
-    if n eq 2 then
-      involution := aut;
-    else
-      involution := aut*aut;
-    end if;
-
-    v := involution[1,2]/involution[2,1];
-    
-    if n eq 2 then
-      if v eq 1 then
-        polys42 cat:= [<f*quad[1], 1, [I]> : quad in quadratics1 | quad[2] eq 1];
-        polys42 cat:= [<f*quad[1], 2, [I,aut]> : quad in quadratics1 | quad[2] eq 2];
-      else
-        polys42 cat:= [<f*quad[1], 1, [I]> : quad in quadratics2 | quad[2] eq 1];
-        polys42 cat:= [<f*quad[1], 2, [I,aut]> : quad in quadratics2 | quad[2] eq 2];
-      end if;
-    else
-      // Our quartic has an automorphism alpha of order 4.
-
-      if v eq 1 then
-        quadratics := [quad[1] : quad in quadratics1];
-      else
-        quadratics := [quad[1] : quad in quadratics2];
-      end if;
-      
-      alphanum := (aut[1,1]*x + aut[1,2]);
-      alphaden := (aut[2,1]*x + aut[2,2]);
-
-      for quad in quadratics do
-        g := quad;
-        orbit := {g};
-        for i in [1..3] do
-          g := Numerator(Evaluate(g,alphanum/alphaden)*alphaden^2);
-          g := g / Coefficient(g,Degree(g));
-          orbit join:= {g};
-        end for;
-        
-        reps := [g : g in orbit | g in quadratics];
-
-        if quad eq Sort(reps)[1] then
-          // Continue processing, we've got the primary representative.
-          case #orbit:
-            when 1:
-              // The quadratic is fixed by all four automorphisms of the quartic.
-              polys42 cat:= [<f*quad, 4, [I,aut,aut^2,aut^3]>];
-            when 2:
-              // The quadratic is fixed by the quartic's involution but that's all.
-              polys42 cat:= [<f*quad, 2, [I,involution]>];
-            when 4:
-              // The quadratic is not fixed by any nontrivial automorphism of the quartic.
-              polys42 cat:= [<f*quad, 1, [I]>];
-          end case;
-        end if;
-      end for;            
-      
-    end if;
-  end for;
-
-  assert &+[1/m[2] : m in polys42] eq q^2 * (q - 1)/8;
-  return polys42;
-end function;
-
-            
-//------------------------------------------------------------------------------            
-
-function sixpoints51(K);
-  // K is a finite field of size q = p^e, with p odd.
-  // Return all PGL(2,K) orbits of Galois-stable sextuples
-  // of elements, 1 in K and 5 in the degree-5 extension of K.
-  
-  // Note that the number of irreducible monic quintics is (q^5 - q)/5 and the
-  // number of rational points on P^1 is q + 1, and dividing the product of 
-  // these by the size of PGL(2,q) we get (q + 1)*(q^2 + 1)/5.
-  // Therefore, the sum over all representatives of 1 over the 
-  // stabilizer of the representative should be (q + 1)*(q^2 + 1)/5.
-  // We check this at the end.
-  
-  
-  q := #K;
-  p, e := Explode(Factorization(q)[1]);
-
-  R<x>:=PolynomialRing(K);
-  L := ext<K|5>;
-  I := Matrix(2,[K|1,0,0,1]);
-  
-  list := [];
-  polys51 := [];
-    
-  // Find a normal basis.
-  i := 0;
-  g := PrimitiveElement(L);
-  repeat 
-    i +:= 1;
-    a1 := g^i;
-    M := Matrix(5, 5, &cat[Eltseq(a1^(q^i),K) : i in [0..4]]);
-  until Rank(M) eq 5;
-    
-  a2 := a1^q;
-  a3 := a2^q;
-  a4 := a3^q;
-  a5 := a4^q;
-
-  
-  if p eq 5 then
-  
-    /*
-    Write elements of L in the normal basis. Normalize so that first
-    coefficient is 0 and first nonzero coefficient is 1.
-    This takes care of a*x + b group. Then rotate, and renormalize.
-    For the main case, 
-      *** we assume that all coefficients are distinct ***
-    so that normal forms have no 0s other than first coefficient.
-    
-       [ 0, 1,           a,           b,           c ]
-       [ 0, 1, (1-b)/(1-a), (1-c)/(1-a),     1/(1-a) ]
-       [ 0, 1, (a-c)/(a-b),     a/(a-b), (a-1)/(a-b) ]
-       [ 0, 1,     b/(b-c), (b-1)/(b-c), (b-a)/(b-c) ]
-       [ 0, 1, (c-1)/c    , (c-a)/c    , (c-b)/c     ]
-       
-    We also first run through the case where no "special conditions" hold,
-    that is, when none of the third column elements beneath the first row are a.
-    Special conditions translate to:
-      b := a^2 - a + 1 ;       // 1st and 2nd equal
-      c := a*(1 + b - a);      // 1st and 3rd equal
-      c := b - b/a;            // 1st and 4th equal
-      c := 1/(1-a);            // 1st and 5th equal
-  
-    */
-    
-    K01 := [a : a in K | a ne 1 and a ne 0];
-    
-    for a in K01 do 
-      a1inv := 1/(1-a);
-      for b in K01 do 
-        if b ne a and a lt (1-b)*a1inv then
-          for c in K01 do
-            if c ne a and c ne b and a lt (a-c)/(a-b) and a lt b/(b-c) and a lt (c-1)/c then
-              list cat:= [Vector(5,[L!0,1,a,b,c])];
-            end if;
-          end for;
-        end if;
-      end for;
-    end for;
-    
-    // Continue to assume that a,b,c are distinct and different from 0 and 1.
-    // But now go through special cases, assuming that *exactly one* holds.
-
-    // b := a^2 - a + 1 ;       // 1st and 2nd equal
-    
-    for a in K01 do
-      b := a^2 - a + 1;
-      // Note that b != a automatically, since otherwise we would have a = 1.
-      
-      for c in K01 do
-        if c ne a and c ne b and a lt (a-c)/(a-b) and a lt b/(b-c) and a lt (c-1)/c then
-          if [b, c] lt [(1-c)/(1-a), 1/(1-a)] then
-            list cat:= [Vector(5,[L!0,1,a,b,c])];
-          end if;
-        end if;
-      end for;
-    end for;
-    
-    // c := a*(1 + b - a);      // 1st and 3rd equal
-
-    for a in K01 do 
-      a1inv := 1/(1-a);
-      for b in K01 do 
-        if b ne a and a lt (1-b)*a1inv then
-          c := a*(1 + b - a); 
-          if c ne a and c ne b and a lt b/(b-c) and a lt (c-1)/c then
-            if [b,c] lt [a/(a-b), (a-1)/(a-b)] then
-              list cat:= [Vector(5,[L!0,1,a,b,c])];
-            end if;
-          end if;
-        end if;
-      end for;
-    end for;
-    
-    // c := b - b/a;            // 1st and 4th equal
-    
-    for a in K01 do 
-      a1inv := 1/(1-a);
-      ainv := 1/a;
-      for b in K01 do 
-        if b ne a and a lt (1-b)*a1inv then
-          c := b*(1-ainv);
-          if c ne a and c ne b and a lt (a-c)/(a-b) and a lt (c-1)/c then
-            if [b,c] lt [(b-1)/(b-c), (b-a)/(b-c)] then
-              list cat:= [Vector(5,[L!0,1,a,b,c])];
-            end if;
-          end if;
-        end if;
-      end for;
-    end for;
-    
-    
-    // c := 1/(1-a);            // 1st and 5th equal
-    
-    for a in K01 do 
-      a1inv := 1/(1-a);
-      for b in K01 do 
-        if b ne a and a lt (1-b)*a1inv then
-          c := a1inv;
-          if c ne a and c ne b and a lt (a-c)/(a-b) and a lt b/(b-c) then
-            if [b,c] lt [(c-a)/c, (c-b)/c] then
-              list cat:= [Vector(5,[L!0,1,a,b,c])];
-            end if;
-          end if;
-        end if;
-      end for;
-    end for;
-                
-
-
-    /* What do two simultaneous special cases look like?
-    
-    1, 2, 3:   b := a^2 - a + 1;       c := a*(1 + b - a); 
-    
-    1, 2, 4:   b := a^2 - a + 1;       c := b - b/a;  
-    
-    1, 2, 5:   b := a^2 - a + 1;       c := 1/(1-a);
-    
-    1, 3, 4:   c := a*(1 + b - a);     c := b - b/a;  
-
-                b - b/a = a + a*b - a^2
-                b * (1 - 1/a - a) = a - a^2
-                b*(-a^2 + a - 1) = a^2*(1-a)
-                b :=  a^2*(a - 1) / (a^2 - a + 1);
-                
-
-
-    
-    1, 3, 5:   c := a*(1 + b - a);     c := 1/(1-a);
-    
-               1/(1-a) = a*(1 + b - a)
-               1 + b - a = 1/(a-a^2)
-               b := 1/(a-a^2) + a - 1
-    
-    1, 4, 5:   c := b - b/a;           c := 1/(1-a);
-    
-               b*(1-1/a) = 1/(1-a)
-               b := -a/(a-1)^2;
-               
-    */            
-        
-    specials := {};
-    
-    
-    for a in K01 do
- 
-      b := a^2 - a + 1;
-      c := a*(1 + b - a); 
-      if #{0,1,a,b,c} eq 5 then specials join:= {[0,1,a,b,c]}; end if;
-
-      c := b - b/a;  
-      if #{0,1,a,b,c} eq 5 then specials join:= {[0,1,a,b,c]}; end if;
-
-      c := 1/(1-a);
-      if #{0,1,a,b,c} eq 5 then specials join:= {[0,1,a,b,c]}; end if;
-
-      b := 1/(a-a^2) + a - 1;
-      c:= a*(1 + b - a);
-      if #{0,1,a,b,c} eq 5 then specials join:= {[0,1,a,b,c]}; end if;
-      
-      b := -a/(a-1)^2;
-      c := b - b/a;    
-      if #{0,1,a,b,c} eq 5 then specials join:= {[0,1,a,b,c]}; end if;
-      
-      if a^2 - a + 1 ne 0 then
-        b :=  a^2*(a - 1) / (a^2 - a + 1);
-        c := a*(1 + b - a);
-        if #{0,1,a,b,c} eq 5 then specials join:= {[0,1,a,b,c]}; end if;
-      end if;
-      
-    end for;
-    
-    
-    /* 
-    Where do the sets with automorphisms fall in this classification?
-    Up to ax+b group, there is only one:
-    x^5 - x = e
-    for some e in K with nonzero trace to GF(5).
-
-    If this corresponds to [u, v, w, x, y]
-    then acting by Galois changes this to 
-    [v, w, x, y, u]
-    and also to
-    [u + f, v + f, w + f, x + f, y + f]
-    where 1 = [f, f, f, f, f]   i.e. f := 1/Trace_{L/K}(alpha) for a generator of our normal basis.
-    
-    so our vector is 
-    [u, u + f, u + 2*f, u+3*f, u+4*f]
-    
-    Normalized, this is
-    [0, 1, 2, 3, 4]
-    And we check that is is equal to all of its normalized conjugates.
-    */
-    
-    veryspecial := [K!0,1,2,3,4];
-    specials := {a : a in specials | not a eq veryspecial};
-
-    for s in specials do
-      zero, one, a, b, c := Explode(s);
-      if s lt [ 0, 1, (1-b)/(1-a), (1-c)/(1-a),     1/(1-a) ] and
-         s lt [ 0, 1, (a-c)/(a-b),     a/(a-b), (a-1)/(a-b) ] and
-         s lt [ 0, 1,     b/(b-c), (b-1)/(b-c), (b-a)/(b-c) ] and
-         s lt [ 0, 1, (c-1)/c    , (c-a)/c    , (c-b)/c     ] then
-        list cat:= [Vector(5,[L!zero,one,a,b,c])];  
-      end if;
-    end for;
-
-
-    // Vectors of type 2111
-    // [0, 0, 1, b, c]    b,c distinct, nonzero, not equal to 1
-    // [0, 1, 0, b, c]
-    
-    // Vectors of type 221
-    // [0, 0, 1, 1, c]    c!=0, c!=1
-    // [0, 1, 0, 1, c]    c!=0, c!=1
-    // [0, 1, 1, 0, c]    c!=0, c!=1
-    
-    // Vectors of type 311
-    // [0, 0, 0, 1, c]    c!=0, c!=1
-    // [0, 0, 1, 0, c]    c!=0, c!=1
-    
-    // Vectors of type 32
-    // [0, 0, 0, 1, 1]
-    // [0, 0, 1, 0, 1]
-    
-    // Vectors of type 41
-    // [0, 0, 0, 0, 1]
-    
-    // Vectors of type 5 --- none. These correspond to elements of K.
-
-    for b, c in K01 do
-      if b ne c then
-        list cat:= [Vector(5,[L!0,0,1,b,c])];
-        list cat:= [Vector(5,[L!0,1,0,b,c])];
-      end if;
-    end for;
-    
-    for c in K01 do
-      list cat:= [Vector(5,[L!0,0,1,1,c])];
-      list cat:= [Vector(5,[L!0,1,0,1,c])];
-      list cat:= [Vector(5,[L!0,1,1,0,c])];
-      list cat:= [Vector(5,[L!0,0,0,1,c])];
-      list cat:= [Vector(5,[L!0,0,1,0,c])];
-    end for;
-
-    list cat:= [Vector(5,[L!0,0,0,1,1])];
-    list cat:= [Vector(5,[L!0,0,0,0,1])];
-    list cat:= [Vector(5,[L!0,0,1,0,1])];
-    
-    
-    avec := Vector([a1,a2,a3,a4,a5]);
-    
-    for v in list do
-      polys51 cat:= [<MinimalPolynomial(InnerProduct(v,avec),K),1,[I]>];
-    end for;
-   
-    Z := Matrix(2,[K|1,1,0,1]);
-    
-    // find an element of K whose trace to GF(5) is nonzero.
-    g := PrimitiveElement(K);
-    t := K!1;
-    while Trace(t,GF(5)) eq 0 do
-      t*:=g;
-    end while;
-
-    polys51 cat:= [<x^5 - x - t, 5, [Z^i : i in [0..4]]>];
-
-     
-  else
-    // We are not in characteristic 5.
-    
-    
-    /*
-
-    Consider trace-0 elements. Basis for them (in terms of ai's):
-    [1,0,0,0,-1]
-    [0,1,0,0,-1]
-    [0,0,1,0,-1]
-    [0,0,0,1,-1]
-    
-    1. Vectors with no zeros. Enumerate as
-         [1,   a,   b,   c,   d]
-       where a,b,c, d:=-a-b-c-1 are nonzero 
-       Scaled and rotated:
-         [1, b/a, c/a, d/a, 1/a]
-         [1, c/b, d/b, 1/b, a/b]
-         [1, d/c, 1/c, a/c, b/c]
-         [1, 1/d, a/d, b/d, c/d]
-         
-         Can just check second coordinates as long as:
-           b != a^2
-           c != a*b
-           d != a*c
-           1 != a*d
-         
-    2. Vectors with one zero. Place it first.
-         [0,1,a,b,-a-b-1]
-       where a,b,a+b+1 are nonzero
-       
-    3. Vectors with two zeroes.
-         [0,0,1,a,-1-a]           a, a+1 nonzero
-         [0,1,0,a,-1-a]           a, a+1 nonzero
-         
-    4. Vectors with three zeroes
-         [0,0,0,1,-1]
-         [0,0,1,0,-1]
-         
-    
-    */
-    
-    Kstar := [a : a in K | a ne 0];
-
-    // First, no special cases
-    for a in Kstar do
-      ainv := 1/a;
-      for b in Kstar do 
-        if a lt b*ainv then
-          binv := 1/b;
-          for c in Kstar do
-            d := -a-b-c-1;
-            if d ne 0 and a lt c*binv and a lt d/c and a lt 1/d then
-              list cat:= [Vector(5,[L!1,a,b,c,d])];
-            end if;
-          end for;
-        end if;
-      end for;
-    end for;
-    
-/* Special case: b = a^2, c != a*b, d != a*c, 1 != a*d
-
-         [1,     a,   a^2,   c,   d]
-         [1,     a,   c/a, d/a, 1/a]
-         [1, c/a^2, d/a^2, 1/a^2, a/a^2]
-         [1, d/c  ,   1/c, a/c, a^2/c]
-         [1, 1/d  ,   a/d, a^2/d, c/d]
-
-*/
-    // b = a^2
-    for a in Kstar do
-      ainv := 1/a;
-      atwo := a^2;
-      ainvtwo := ainv^2;
-      b := a^2;
-      for c in Kstar do
-        d := -a-b-c-1;
-        if d ne 0 and a lt c*ainvtwo and a lt d/c and a lt 1/d then
-          if [b, c, d] lt [c*ainv, d*ainv, ainv] then
-            list cat:= [Vector(5,[L!1,a,b,c,d])];
-          end if;
-        end if;
-      end for;
-    end for;
-    
-/* Special case: b != a^2, c = a*b, d != a*c, 1 != a*d
-
--a-b-a*b-1 != a*c
-
-b^2 eq -a-b-a*b-1 = -(a+1)*(b+1)
-
-
-         [1,   a,   b, a*b,   d]
-         [1, b/a, c/a, d/a, 1/a]
-         [1,   a, d/b, 1/b, a/b]
-         [1, d/c, 1/c, a/c, b/c]
-         [1, 1/d, a/d, b/d, c/d]
-
-*/
-    
-    for a in Kstar do
-      ainv := 1/a;
-      for b in Kstar do
-        if a lt b*ainv then
-          binv := 1/b;
-          c := a*b;
-          d := -a-b-c-1;
-          if d ne 0 and a lt d/c and a lt 1/d then
-            if [b, c, d] lt [d*binv,binv,a*binv] then
-              list cat:= [Vector(5,[L!1,a,b,c,d])];
-            end if;
-          end if;
-        end if;
-      end for;
-    end for;
-    
-/* Special case: b != a^2, c != a*b, d = a*c, 1 != a*d
-
--1-a-b-c = a*c
-b = -(1+a)*(1+c)
-
-         [1,   a,   b,   c,   d]
-         [1, b/a, c/a, d/a, 1/a]
-         [1, c/b, d/b, 1/b, a/b]
-         [1,   a, 1/c, a/c, b/c]
-         [1, 1/d, a/d, b/d, c/d]
-
-*/
-    
-    for a in Kstar do
-      if a ne -1 then
-        ainv := 1/a;
-        for c in Kstar do
-          if c ne -1 then
-            b := -(a+1)*(c+1);
-            d := -a-b-c-1;
-            if  a lt b*ainv and a lt c/b and a lt 1/d then
-              cinv := 1/c;
-              if [b, c, d] lt [cinv,a*cinv,b*cinv] then
-                list cat:= [Vector(5,[L!1,a,b,c,d])];
+               end if;
               end if;
             end if;
+          end for;
+        end if;
+      end for;
+    end if;
+  end for;
+  
+  // OK. Now the sets that have involutions.
+  
+  for b, c in K do
+    if b*c eq -1 then continue c; end if;
+    if c ne 1 then
+      newb := c/(1-c);
+      newc := (b-c+2)/(1-c);
+      if b gt newb or (b eq newb and c gt newc) then continue c; end if;
+    end if;
+    
+    if b ne -1 then
+      newb := (c-b-2)/(b+1);
+      newc := b/(b+1);
+      if b gt newb or (b eq newb and c gt newc) then continue c; end if;
+    end if;
+
+    // We have a good one! And we know it has an involution.
+    M := Matrix(2,[1,b,c,-1]);
+
+
+    newcubic := Numerator(Evaluate(basecubic,(x+b)/(c*x-1))*(c*x-1)^3);
+    newcubic := newcubic/Coefficient(newcubic,3);
+    f := basecubic*newcubic;
+
+    autgroup := [I, PGLreduce(M)];
+    if (c eq b+1) or (b eq -2 and c eq 2) then
+      // We have automorphisms of order 3 as well.
+      autgroup := [I, A2, A3] cat [PGLreduce(M*A) : A in [I,A2,A3]];
+    end if;      
+
+    if curves then
+      Cs := curves_from_divisor(f,autgroup);
+    else
+      Cs := [<f,#autgroup,autgroup>];
+    end if;
+
+    for C in Cs do
+      checksum33 +:= 1/C[2]; 
+      if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+      if passback then Clist cat:= [C]; end if;
+    end for;
+
+  end for;
+  
+  assert checksum33 eq (q^3 - q - 3)/18;
+
+  if outputfile ne "" then
+    UnsetOutputFile();
+  end if;
+ 
+  return Clist;
+end function;
+
+//------------------------------------------------------------------------------
+
+
+function genustwo4x(K : passback := true, curves := true, output := false, outputfile := "")
+  // K is a finite field of size q = p^e, with p odd.
+  // Compute representatives of either
+  //    (a) all isomorphism classes of genus-2 curves over K with Weierstrass
+  //        divisor of Galois type (4, ...)
+  //    (b) all PGL(2,K) orbits of divisors of P^1 of Galois type (4, ...),
+  // depending on whether curves = true or curves = false.
+  
+  // If passback = true, we return the set of representatives; otherwise we
+  // return an empty list.
+  
+  // If output = true, we print the representatives as they are computed.
+  // We print to standard out if outputfile = ""; otherwise, we print to 
+  // the named file.
+  
+  // In any case, the sum, over all representatives of a given Galois type, of 1
+  // over the size of the automorphism group of the representative should be as
+  // follows:
+  
+  // Galois type (4,1,1): q^2 * (q+1) /8
+  // Galois type (4,2)):  q^2 * (q-1) /8.
+
+  // We check this at the end.
+  
+  // We include the size of the automorphism group of each representative as 
+  // part of the output. If we are passing back a list, we include the
+  // automorphism group itself, as well.
+
+
+  if outputfile ne "" then
+    SetOutputFile(outputfile);
+  end if;
+
+  Clist := [];
+  q := #K;
+  ns := nonsquare(K);
+  R<x>:=PolynomialRing(K);
+  I := Matrix(2,[K|1,0,0,1]);
+  
+  quartics := fourpoints4(K : ns := ns);
+  autgroups := Sort([a : a in {m[3] : m in quartics}]);
+
+  checksum411 := 0;
+  checksum42 := 0;
+
+  for A in autgroups do
+    // Compute representatives for the separable quadratics under the
+    // action of A. For each rep, multiply the rep by the quartics with
+    // automorphism group A.
+    
+    quarticsA := [z : z in quartics | z[3] eq A];
+    
+    // To make the computation of orbits representatives of A acting on
+    // quadratics more efficient, we precompute some expressions.
+    shortA := [M : M in A | M ne I];
+    rats := [(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]) : M in shortA];
+    mults := [(M[2,1]*x + M[2,2])^2 : M in shortA];
+  
+    for leadterms in [[0,1]] cat [[1,a] : a in K] do
+      for b in K do
+        quadratic := leadterms[1]*x^2 + leadterms[2]*x + b;
+        // Note that this "quadratic" may be linear. 
+        D := Discriminant(quadratic);
+        if D eq 0 then continue b; end if;
+        splitflag := IsSquare(D);
+
+        orbit := [quadratic];
+        autgroup := [I];
+        for i in [1..#shortA] do
+          g := Numerator(Evaluate(quadratic,rats[i]) * mults[i]);
+          g := g/Coefficient(g,Degree(g));
+          orbit cat:= [g];
+          if g lt quadratic then continue b; end if;
+          if g eq quadratic then
+            autgroup cat:= [shortA[i]];
           end if;
         end for;
-      end if;
-    end for;
-    
-    
-/* Special case: b != a^2, c != a*b, d = !a*c, 1 = a*d
-
-1 = a*(-1-a-b-c)
-a + b + c + 1 = -1/a
-c = -1 - b - a - 1/a
-
-         [1,   a,   b,   c,   d]
-         [1, b/a, c/a, d/a, 1/a]
-         [1, c/b, d/b, 1/b, a/b]
-         [1, d/c, 1/c, a/c, b/c]
-         [1,   1, a^2, a*b, a*c]
-
-*/
-    
-    for a in Kstar do
-      ainv := 1/a;
-      for b in Kstar do
-        if a lt b*ainv then
-          c := -1-a-b-ainv;
-          d := -a-b-c-1;
-          if c ne 0 and a lt c/b and a lt d/c then
-            if [b, c, d] lt [a^2, a*b, a*c] then
-              list cat:= [Vector(5,[L!1,a,b,c,d])];
-            end if;
+      
+        if splitflag then
+          checksum411 +:= #quarticsA/#autgroup;
+        else
+          checksum42 +:= #quarticsA/#autgroup;
+        end if;
+        for quartic in quarticsA do
+          f := quartic[1]*quadratic;
+          if curves then
+            Cs := curves_from_divisor(f,autgroup);
+          else
+            Cs := [<f,#autgroup,autgroup>];
           end if;
-        end if;
+
+          for C in Cs do
+            if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+            if passback then Clist cat:= [C]; end if;
+          end for;
+        end for;
       end for;
     end for;
-
-
-
-/*
-What do two special cases look like?
-
-b = a^2    c = a*b
-
-b := a^2 
-c := a^3;
-d := -1 - a - b - c
-
-
-
-b = a^2    d = a*c
-
--1 - a - a^2 - c = a*c
-(a+1)*c = -1 -a - a^2
-
-b := a^2
-c := (-1-a-a^2)/(1 + a)
-d := a*c
-
-
-
-b = a^2    1 = a*d
-
-a*(-1-a-a^2-c) = 1
-
-b := a^2;
-d := 1/a
-c := -1 -a - a^2 - d
-
-
-
-c = a*b    d = a*c
-
--1-a-b-a*b = a*a*b
--1-a = b*(a^2+a+1)
-
-b := -(a+1)/(a^2 + a + 1)
-c := a*b;
-d := -1-a-b-c;
-
-
-
-c = a*b     1 = a*d
-
-1 = a*(-1-a-b-a*b)
--1/a = (a+1)*(b+1)
-b + 1 = -1/(a^2 + a)
-b = -(a^2 + a + 1)/(a^2 + a)
-c := a*b;
-d := -1-a-b-c;
-
-
-
-d = a*c      1 = a*d
-
-c := 1/a^2
-
-b = -1-a-1/a-1/a^2 = -a - 1 - (a+1)/a^2 = -(a+1)(a^2+a+1)/a^2;
-
-b := -(a+1)(a^2+a+1)/a^2;
-c := 1/a^2;
-d := -1-a-b-c
-
-*/
-
-    specials := {};
-    for a in Kstar do
-      b := a^2; c:= a^3; d := -1-a-b-c;
-      if d ne 0 then specials join:= {[1,a,b,c,d]}; end if;
-      
-      b := a^2; d := 1/a; c := -1-a-b-d;
-      if c ne 0 then specials join:= {[1,a,b,c,d]}; end if;
-
-       c := 1/a^2; b := -(a+1)*(a^2+1)*c; d := -1-a-b-c;
-      if b*d ne 0 then specials join:= {[1,a,b,c,d]}; end if;
-      
-      if a ne -1 then
-        b := a^2; c := -(a^2+a+1)/(1+a); d := -1-a-b-c;
-        if c*d ne 0 then specials join:= {[1,a,b,c,d]}; end if;
-
-        b := -(a^2+a+1)/(a^2+a); c := a*b; d := -1-a-b-c;
-        if b*d ne 0 then specials join:= {[1,a,b,c,d]}; end if;
-      end if;
-      
-      if a^2 + a + 1 ne 0 then
-        b := -(a+1)/(a^2+a+1); c := a*b; d := -1-a-b-c;
-        if b*d ne 0 then specials join:= {[1,a,b,c,d]}; end if;
-      end if;
-    end for;
-    
-    if 1 eq q mod 5 then
-      zeta := Roots(x^4 + x^3 + x^2 + x + 1)[1][1];
-      veryspecials := [[a^i : i in [0..4]] : a in [zeta^j : j in [1..4]]];
-      specials := {a : a in specials | not a in veryspecials};
-    end if;
-    
-    for s in specials do
-      o, a, b, c, d := Explode(s);
-      if s lt [1, b/a, c/a, d/a, 1/a] and
-         s lt [1, c/b, d/b, 1/b, a/b] and
-         s lt [1, d/c, 1/c, a/c, b/c] and
-         s lt [1, 1/d, a/d, b/d, c/d] then
-        list cat:= [Vector(5,[L!1,a,b,c,d])];  
-      end if;
-    end for;
-
-        
-    // Vectors with one zero. Place it first.
-    
-    for a in Kstar do
-      for b in Kstar do
-        if a+b+1 ne 0 then
-          list cat:= [Vector(5,[L!0,1,a,b,-1-a-b])];
-        end if;
-      end for;
-    end for;
-       
-    // Vectors with two zeroes.
-    
-    for a in Kstar do
-      if a+1 ne 0 then
-        list cat:= [Vector(5,[L!0,0,1,a,-1-a])];
-        list cat:= [Vector(5,[L!0,1,0,a,-1-a])];
-      end if;
-    end for;
-
-    // Vectors with three zeroes.
-
-    list cat:= [Vector(5,[L!0,0,0,1,-1])];
-    list cat:= [Vector(5,[L!0,0,1,0,-1])];
-
-
-    avec := Vector([a1,a2,a3,a4,a5]);
-    
-    for v in list do
-      polys51 cat:= [<MinimalPolynomial(InnerProduct(v,avec),K),1,[I]>];
-    end for;
-
-    if 1 eq q mod 5 then
-      if 0 eq ((q-1) div (p-1)) mod 5 then
-        a := PrimitiveElement(K);
-      else
-        a := K!PrimitiveElement(GF(p));
-      end if;
-
-      Z := Matrix(2,[zeta,0,0,1]);
-      for i in [1..4] do
-        polys51 cat:= [<x^5 - a^i,5,[Z^i : i in [0..4]]>];
-      end for;
-    end if;
-    
+  end for;
+          
+  assert checksum411 eq q^2*(q+1)/8 and checksum42 eq q^2*(q-1)/8;
+  
+  if outputfile ne "" then
+    UnsetOutputFile();
   end if;
   
+  return Clist;
+end function;
 
-  assert &+[1/m[2] : m in polys51] eq (q + 1)*(q^2 + 1)/5;
-  return polys51;
+
+
+//------------------------------------------------------------------------------            
+
+function genustwo51(K : passback := true, curves := true, output := false, outputfile := "")
+
+  // K is a finite field of size q = p^e, with p odd.
+  // Compute representatives of either
+  //    (a) all isomorphism classes of genus-2 curves over K with Weierstrass
+  //        divisor of Galois type (5,1)
+  //    (b) all PGL(2,K) orbits of divisors of P^1 of Galois type (5,1),
+  // depending on whether curves = true or curves = false.
+  
+  // If passback = true, we return the set of representatives; otherwise we
+  // return an empty list.
+  
+  // If output = true, we print the representatives as they are computed.
+  // We print to standard out if outputfile = ""; otherwise, we print to 
+  // the named file.
+  
+  // In any case, the sum, over all representatives of a given Galois type, of 1
+  // over the size of the automorphism group of the representative should be as
+  // follows:
+  
+  // Galois type (5,1): (q^3+q^2+q+1)/5
+
+  // We check this at the end.
+  
+  // We include the size of the automorphism group of each representative as 
+  // part of the output. If we are passing back a list, we include the
+  // automorphism group itself, as well.
+
+
+  // Our strategy is to enumerate all irreducible quintics up to the action
+  // of PGL(2,K) using the strategy in [Howe2024], using Frobenius divisors.
+  // This takes time O(q^2). Then for each such quintic f, we output f as well
+  // as f*(x-a) for all a in K.
+
+  if outputfile ne "" then
+    SetOutputFile(outputfile);
+  end if;
+
+  checksum51 := 0;
+  Clist := [];
+  q := #K;
+  R<x>:=PolynomialRing(K);
+  zeta := PrimitiveElement(K);
+  ns := nonsquare(K);  
+  irred3 := irreducible3(K);
+  I := Matrix(2,[K|1,0,0,1]);
+  
+  linears := [1] cat [x-a : a in K];
+
+  // First deal with places with Frobenius functions of degree 1.
+  // The paper tells us what they are.
+
+  case q mod 5:
+    when 0: 
+      // Find an element of K of nonzero absolute trace.
+      t := K!1;
+      if Trace(t,GF(5)) eq 0 then
+        repeat t*:=zeta;
+        until Trace(t,GF(5)) ne 0;
+      end if;
+      A := Matrix(2,[K!1,1,0,1]);
+      
+      T := [<x^5 - x - t, [A^i : i in [0..4]]>];
+
+    when 1: 
+      rootof1 := zeta^((q-1) div 5);
+      A := Matrix(2,[rootof1,0,0,1]);
+      auts := [A^i : i in [0..4]];
+      T := [<x^5 - zeta, auts>, <x^5 - zeta^2, auts>];
+      
+    when 4:
+      KK := ext<K | 10>;
+      zeta2 := PrimitiveElement(KK);
+      // Want element of order 5*(q+1).
+      // zeta2 has order q^10 - 1 
+      xi := zeta2^((q^10-1) div (5*(q+1)));
+      // Want an element ss of the quadratic extension of K in KK
+      ss := xi^5;
+
+      // Automorphisms:
+      zeta := xi^(q+1); // Fifth root of 1
+      r := (ss^(q) - zeta*ss)/(zeta-1);
+      a := - ss - ss^(q);
+      b := ss^(q+1);
+      A := Matrix(2,[K|r-a,-b,1,r]);
+      auts := [PGLreduce(A^i) : i in [0..4]];
+      
+      
+      T := [<MinimalPolynomial( (ss*xi   + ss^(q))/(xi   + 1), K), auts>,
+            <MinimalPolynomial( (ss*xi^2 + ss^(q))/(xi^2 + 1), K), auts>];
+    else
+      T := [];
+  end case;
+  
+  // Process these.
+  for quinticauts in T do
+    quintic, auts := Explode(quinticauts);
+    shortauts := [M : M in auts | M ne I];
+    rats := [(M[1,1]*x + M[1,2])/(M[2,1]*x + M[2,2]) : M in shortauts];
+    dens := [M[2,1]*x + M[2,2] : M in shortauts];
+
+    for linear in linears do
+      orbit := [linear];
+      autgroup := [I];
+      for i in [1..#shortauts] do
+        g := Numerator(Evaluate(linear,rats[i]) * dens[i]);
+        g := g/Coefficient(g,Degree(g));
+        orbit cat:= [g];
+        if g eq linear then
+          autgroup cat:= [shortauts[i]];
+        end if;
+      end for;
+      
+      if linear eq Sort(orbit)[1] then
+        f := quintic*linear;
+        if curves then
+          Cs := curves_from_divisor(f,autgroup);
+        else
+          Cs := [<f,#autgroup,autgroup>];
+        end if;
+
+        for C in Cs do
+          checksum51 +:= 1/C[2]; 
+          if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+          if passback then Clist cat:= [C]; end if;
+        end for;
+        
+      end if;
+    end for;
+  end for;
+  
+  // Now turn to the irreducible quintics over K with Frobenius functions
+  // of degree 2; i.e., with no automorphisms.
+  
+  autgroup := [I];
+  
+  // We need reps for degree-3 divisors over K up to PGL(2,K).
+  // 3*oo
+  // 2*oo + 0
+  // oo + 0 + 1
+  // oo + irred2
+  // irred3
+
+  // D = 3*oo. The paper tells us exactly what to do in this case.
+  // There are only two associated functions:
+  // (x^2 + y^2)/(xy) and (x^2 + ns*y^2)/(xy), where ns is a nonsquare in K.
+
+
+  for F in [(x^2+1)/x, (x^2+ns)/x] do
+    F2 := Evaluate(F,F);
+    F4 := Evaluate(F2,F2);
+    F5 := Evaluate(F4,F);
+    g := Numerator(x - F5);
+    shortlist := [];
+    facg := [ff[1] : ff in Factorization(g) | Degree(ff[1]) eq 5];    
+    for ff in facg do
+      if IsFrobeniusFunction(F,ff) then
+        shortlist cat:= [<cross(ff),ff>];
+      end if;
+    end for;
+    Sort(~shortlist);
+    for i in [1..#shortlist] do
+      if i eq 1 or shortlist[i][1] ne shortlist[i-1][1] then
+        quintic := shortlist[i][2];
+        for linear in linears do
+          f := quintic*linear;
+          if curves then
+            Cs := curves_from_divisor(f,autgroup);
+          else
+            Cs := [<f,#autgroup,autgroup>];
+          end if;
+
+          for C in Cs do
+            checksum51 +:= 1/C[2]; 
+            if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+            if passback then Clist cat:= [C]; end if;
+          end for;
+        end for;
+      end if;
+    end for;
+  end for;
+
+
+  // D = 2*oo + 0. The paper tells us exactly what to do in this case.
+  // The functions to consider are
+  // (x^2 + sx)/(x + 1)  where s!=1
+  
+  for a in K do 
+    if a eq 1 then continue a; end if;
+    F := (x^2+a*x)/(x+1);
+    F2 := Evaluate(F,F);
+    F4 := Evaluate(F2,F2);
+    F5 := Evaluate(F4,F);
+    g := Numerator(x - F5);
+    shortlist := [];
+    facg := [ff[1] : ff in Factorization(g) | Degree(ff[1]) eq 5];    
+    for ff in facg do
+      if IsFrobeniusFunction(F,ff) then
+        shortlist cat:= [<cross(ff),ff>];
+      end if;
+    end for;
+    Sort(~shortlist);
+    for i in [1..#shortlist] do
+      if i eq 1 or shortlist[i][1] ne shortlist[i-1][1] then
+        quintic := shortlist[i][2];
+        for linear in linears do
+          f := quintic*linear;
+          if curves then
+            Cs := curves_from_divisor(f,autgroup);
+          else
+            Cs := [<f,#autgroup,autgroup>];
+          end if;
+
+          for C in Cs do
+            checksum51 +:= 1/C[2]; 
+            if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+            if passback then Clist cat:= [C]; end if;
+          end for;
+        end for;
+      end if;
+    end for;
+  end for;
+
+
+  // oo + 0 + 1
+  // oo + irred2
+  // irred3
+
+  // D = oo + 0 + 1.
+  // r := 2;
+  // p = y*z*(y-z)
+  // want (y*h - c*p)/(z*h) where h has degree 2 and gcd with p is z
+  // and where c is nonzero and cp != yh mod z^2
+  // c*y^2*z != y*h mod z^2
+  // h = z*(y + b*z)
+  // c*y^2*z != y^2*z  so c!=1
+  // (y*z*(y + b*z) - c*y*z*(y-z)) / (z^2*y + b*z^3)
+  // (y*(y + b*z) - c*y*(y-z)) / (z*y + b*z^2)
+  // (y^2 + b*y*z - c*y^2 + c*y*z) / (z*y + b*z^2)
+  // ((1-c)*y^2 + (b+c)*y) / (y + b)   b arbitrary, c nonzero, non-1
+
+  // Elements of PGL2 that fix D  
+  Dmatrixauts := [ Matrix(2,[K |  1,  0, 0,  1]),
+                   Matrix(2,[K |  0, -1, 1, -1]),
+                   Matrix(2,[K |  1,  0, 1, -1]),
+                   Matrix(2,[K |  0,  1, 1,  0]),
+                   Matrix(2,[K |  1, -1, 1,  0]),
+                   Matrix(2,[K | -1,  1, 0,  1]) ];
+             
+  Dmatrixautsinverse := [M^-1 : M in Dmatrixauts];             
+
+  Dfunctionauts := [(m[1,1]*x + m[1,2])/(m[2,1]*x + m[2,2]) : m in Dmatrixauts];             
+  Dfunctionautsinverse := [(m[1,1]*x + m[1,2])/(m[2,1]*x + m[2,2]) : m in Dmatrixautsinverse];             
+             
+
+  for b,c in K do
+    if c^2 eq c then continue c; end if;
+    F := ((1-c)*x^2 + (b+c)*x)/(x + b);  
+
+    for i in [2..#Dfunctionauts] do
+      Fprime := Evaluate(Dfunctionauts[i],Evaluate(F,Dfunctionautsinverse[i]));
+      if Fprime lt F then continue c; end if;
+    end for;
+
+    F2 := Evaluate(F,F);
+    F4 := Evaluate(F2,F2);
+    F5 := Evaluate(F4,F);
+    g := Numerator(x - F5);
+    shortlist := [];
+    facg := [ff[1] : ff in Factorization(g) | Degree(ff[1]) eq 5];    
+    for ff in facg do
+      if IsFrobeniusFunction(F,ff) then
+        shortlist cat:= [<cross(ff),ff>];
+      end if;
+    end for;
+    Sort(~shortlist);
+    for i in [1..#shortlist] do
+      if i eq 1 or shortlist[i][1] ne shortlist[i-1][1] then
+        quintic := shortlist[i][2];
+        for linear in linears do
+          f := quintic*linear;
+          if curves then
+            Cs := curves_from_divisor(f,autgroup);
+          else
+            Cs := [<f,#autgroup,autgroup>];
+          end if;
+
+          for C in Cs do
+            checksum51 +:= 1/C[2]; 
+            if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+            if passback then Clist cat:= [C]; end if;
+          end for;
+        end for;
+      end if;
+    end for;
+  end for;
+  
+  
+  // D = oo + irred2.
+  // r := 2;
+  // p = z*(y^2 - ns*z^2)
+  // want (y*h - c*p)/(z*h) where h has degree 2 and gcd with p is z
+  // and where c is nonzero and cp != yh mod z^2
+  
+  // First, h = z^2.
+  // c*z*(y^2 - ns*z^2) != 0 mod z^2
+  // c*y^2 != 0 mod z
+  
+  // Second, h = z*(y + b*z).
+  // c*z*(y^2 - ns*z^2) != y*z*(y + b*z) mod z^2
+  // c*z*y^2 - c*ns*z^3 != y^2*z + b*y*z^2 mod z^2
+  // c*z*y^2 != y^2*z  mod z^2
+  // c != 1, b arbitrary
+
+  // y*(y + b) - c*(y^2 - ns)    y^2 + b*y - c*y^2 + ns*c
+  // ------------------------- = ------------------------
+  // (y + b)                     y + b
+  
+  
+  // Elements of PGL2 that fix D  
+  // y --> -y
+  Dmatrixauts := [ Matrix(2,[K |  1, 0, 0, 1]),
+                   Matrix(2,[K | -1, 0, 0, 1]) ];
+             
+  Dmatrixautsinverse := [M^-1 : M in Dmatrixauts];             
+
+  Dfunctionauts := [(m[1,1]*x + m[1,2])/(m[2,1]*x + m[2,2]) : m in Dmatrixauts];             
+  Dfunctionautsinverse := [(m[1,1]*x + m[1,2])/(m[2,1]*x + m[2,2]) : m in Dmatrixautsinverse];             
+             
+
+
+  // First, h = z^2:
+
+  for c in K do
+    if c eq 0 then continue c; end if;
+    F := c*x^2 + x - c*ns;
+
+    for i in [2..#Dfunctionauts] do
+      Fprime := Evaluate(Dfunctionauts[i],Evaluate(F,Dfunctionautsinverse[i]));
+      if Fprime lt F then continue c; end if;
+    end for;
+
+    F2 := Evaluate(F,F);
+    F4 := Evaluate(F2,F2);
+    F5 := Evaluate(F4,F);
+    g := Numerator(x - F5);
+    shortlist := [];
+    facg := [ff[1] : ff in Factorization(g) | Degree(ff[1]) eq 5];    
+    for ff in facg do
+      if IsFrobeniusFunction(F,ff) then
+        shortlist cat:= [<cross(ff),ff>];
+      end if;
+    end for;
+    Sort(~shortlist);
+    for i in [1..#shortlist] do
+      if i eq 1 or shortlist[i][1] ne shortlist[i-1][1] then
+        quintic := shortlist[i][2];
+        for linear in linears do
+          f := quintic*linear;
+          if curves then
+            Cs := curves_from_divisor(f,autgroup);
+          else
+            Cs := [<f,#autgroup,autgroup>];
+          end if;
+
+          for C in Cs do
+            checksum51 +:= 1/C[2]; 
+            if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+            if passback then Clist cat:= [C]; end if;
+          end for;
+        end for;
+      end if;
+    end for;
+  end for;
+  
+  // Next, h =  h = z*(y + b*z)
+    
+  for b,c in K do
+    if c^2 eq c then continue c; end if;
+    F := ((1-c)*x^2 + b*x + ns*c)/(x + b);
+    
+    for i in [2..#Dfunctionauts] do
+      Fprime := Evaluate(Dfunctionauts[i],Evaluate(F,Dfunctionautsinverse[i]));
+      if Fprime lt F then continue c; end if;
+    end for;
+
+    F2 := Evaluate(F,F);
+    F4 := Evaluate(F2,F2);
+    F5 := Evaluate(F4,F);
+    g := Numerator(x - F5);
+    shortlist := [];
+    facg := [ff[1] : ff in Factorization(g) | Degree(ff[1]) eq 5];    
+    for ff in facg do
+      if IsFrobeniusFunction(F,ff) then
+        shortlist cat:= [<cross(ff),ff>];
+      end if;
+    end for;
+    Sort(~shortlist);
+    for i in [1..#shortlist] do
+      if i eq 1 or shortlist[i][1] ne shortlist[i-1][1] then
+        quintic := shortlist[i][2];
+        for linear in linears do
+          f := quintic*linear;
+          if curves then
+            Cs := curves_from_divisor(f,autgroup);
+          else
+            Cs := [<f,#autgroup,autgroup>];
+          end if;
+
+          for C in Cs do
+            checksum51 +:= 1/C[2]; 
+            if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+            if passback then Clist cat:= [C]; end if;
+          end for;
+        end for;
+      end if;
+    end for;
+  end for;
+ 
+
+  // D = irred3.
+  // r := 2;
+  // p = irred3
+  // want (y*h - irred3)/(z*h) where h is monic, degree 2, coprime to z
+  // h = y^2 + a*y + b 
+  
+  // Elements of PGL2 that fix irred3
+
+  Dmatrixauts := [I,Matrix(2,[0,-1,1,-1]), Matrix(2,[1,-1,1,0])];
+  Dmatrixautsinverse := [M^-1 : M in Dmatrixauts];             
+
+  Dfunctionauts := [(m[1,1]*x + m[1,2])/(m[2,1]*x + m[2,2]) : m in Dmatrixauts];             
+  Dfunctionautsinverse := [(m[1,1]*x + m[1,2])/(m[2,1]*x + m[2,2]) : m in Dmatrixautsinverse];             
+
+  for a,b in K do
+    F := (x^3 + a*x^2 + b*x - irred3)/(x^2 + a*x + b);
+    
+    for i in [2..#Dfunctionauts] do
+      Fprime := Evaluate(Dfunctionauts[i],Evaluate(F,Dfunctionautsinverse[i]));
+      if Fprime lt F then continue b; end if;
+    end for;
+
+    F2 := Evaluate(F,F);
+    F4 := Evaluate(F2,F2);
+    F5 := Evaluate(F4,F);
+    g := Numerator(x - F5);
+    shortlist := [];
+    facg := [ff[1] : ff in Factorization(g) | Degree(ff[1]) eq 5];    
+    for ff in facg do
+      if IsFrobeniusFunction(F,ff) then
+        shortlist cat:= [<cross(ff),ff>];
+      end if;
+    end for;
+    Sort(~shortlist);
+    for i in [1..#shortlist] do
+      if i eq 1 or shortlist[i][1] ne shortlist[i-1][1] then
+        quintic := shortlist[i][2];
+        for linear in linears do
+          f := quintic*linear;
+          if curves then
+            Cs := curves_from_divisor(f,autgroup);
+          else
+            Cs := [<f,#autgroup,autgroup>];
+          end if;
+
+          for C in Cs do
+            checksum51 +:= 1/C[2]; 
+            if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+            if passback then Clist cat:= [C]; end if;
+          end for;
+        end for;
+      end if;
+    end for;
+  end for;
+
+
+  assert checksum51 eq (q^3+q^2+q+1)/5;
+  
+  if outputfile ne "" then
+    UnsetOutputFile();
+  end if;
+  
+  return Clist;
 end function;
 
 
 //------------------------------------------------------------------------------
 
-function sixpoints6(K);
-  // K is a finite field of size q = p^e, with p odd. Return representatives
-  // of all PGL(2,K) orbits of Galois-stable sextuples of elements of the
-  // degree-6 extension of K.
+function genustwo6(K : passback := true, curves := true, output := false, outputfile := "")
+
+  // K is a finite field of size q = p^e, with p odd.
+  // Compute representatives of either
+  //    (a) all isomorphism classes of genus-2 curves over K with Weierstrass
+  //        divisor of Galois type (6)
+  //    (b) all PGL(2,K) orbits of divisors of P^1 of Galois type (6),
+  // depending on whether curves = true or curves = false.
   
-  // Note that the number of irreducible monic sextics is
-  // (q^6 - q^3 - q^2 + q)/6 = (q^3 - q) * (q^3 + q - 1)/6,
-  // and dividing by the size of PGL(2,q) we get (q^3 + q - 1)/6.
-  // Therefore, the sum over all representatives of 1 over the 
-  // stabilizer of the representative should be (q^3 + q - 1)/6.
+  // If passback = true, we return the set of representatives; otherwise we
+  // return an empty list.
+  
+  // If output = true, we print the representatives as they are computed.
+  // We print to standard out if outputfile = ""; otherwise, we print to 
+  // the named file.
+  
+  // In any case, the sum, over all representatives of a given Galois type, of 1
+  // over the size of the automorphism group of the representative should be as
+  // follows:
+  
+  // Galois type (6): (q^3 + q - 1)/6
+
   // We check this at the end.
   
-  
+  // We include the size of the automorphism group of each representative as 
+  // part of the output. If we are passing back a list, we include the
+  // automorphism group itself, as well.
+
+
   // We produce the sextics by applying elements of PGL(2,F_{q^2}) to 
   // the root in F_{q^3} of an irreducible cubic over F_q.
   // We only list elements of PGL(2,F_{q^2}) up to the left action
   // of PGL(2,K).
   
   // IN ADDITION: Galois conjugate elements of PGL(2,F_{q^2}) give
-  // isomorphic sextics, as do rotations of the vector specifiying
+  // isomorphic sextics, as do rotations of the vector specifying
   // where oo, 0, and 1 go to. So how do we get a unique representative
   // for an element of PGL(2,F_{q^2}) specified by (r, s, t)?
   
@@ -3525,8 +3145,8 @@ function sixpoints6(K);
   // Negating and conjugating gets us in the same beta orbit, so
   // all theta are good.
 
-  // Fourth: Now none of r,s,t lies in K, and no two are conjugate.
-  // We demand that if (r,s,t) is in the right order then we only
+  // Fourth: Left with the case where none of r,s,t lies in K, and no two are
+  // conjugate. We demand that if (r,s,t) is in the right order then we only
   // take it if it "comes before" the normal form of its conjugate.
   // Given that r = beta and s is a beta orbit rep,
   // to normalize the conjugate we start with (-rbar, -sbar, -tbar).
@@ -3534,8 +3154,7 @@ function sixpoints6(K);
   // -sbar is in the same orbit as s so we find the transformation
   // that fixes beta and takes -sbar to s, then apply it to t to get t',
   // and we demand that t \le t'.
-  
-  
+   
   // Compute the 3 cross ratios
   // jr = (r,s,t,rbar), js = (s,t,r,sbar), jt = (t,r,s,tbar). 
   // If exactly two are equal, normalize by insisting that they are the
@@ -3568,52 +3187,161 @@ function sixpoints6(K);
   // r      s      t      rbar
   // sbar   tbar   rbar   s
 
+  if outputfile ne "" then
+    SetOutputFile(outputfile);
+  end if;
+
+  checksum6 := 0;
+  Clist := [];
+  
   q := #K;
   ns := nonsquare(K);
   R<x>:=PolynomialRing(K);
   L<beta>:=ext<K | x^2 - ns>;
+  M := ext<L | 3>;
+  alpha := Roots(irreducible3(K),M)[1][1];
   I := Matrix(2,[K|1,0,0,1]);
 
   
-  // First
-  // oo, 0, beta + a
-  // with a nonzero:
-  reps := [<Matrix(2,[beta+a, 0, 0, 1]), 1, [I]> : a in K | a eq Sort([a,-a])[1] and a ne 0];
+  // First: triples (oo, 0, beta + a).
+  // The ones with a nonzero...
 
-  // with a = 0, in which case we get an involution:
-  aut := Matrix(2,[K| -1,0,0,1]);
-  reps cat:= [<Matrix(2,[beta, 0, 0, 1]), 2, [aut]>];
+  autgroup := [I];  
+  for a in K do
+    if a eq 0 or a gt -a then continue a; end if;
+    
+    // Process it:
+    aa := beta+a;
+    bb := 0;
+    cc := 0;
+    dd := 1;
+    f := MinimalPolynomial((aa*alpha + bb)/(cc*alpha + dd),K);
+    if curves then
+      Cs := curves_from_divisor(f,autgroup);
+    else
+      Cs := [<f,#autgroup,autgroup>];
+    end if;
+
+    for C in Cs do
+      checksum6 +:= 1/C[2]; 
+      if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+      if passback then Clist cat:= [C]; end if;
+    end for;
+  end for;
+    
+
+  // ... and the ones with a = 0, in which case we get an involution.
+
+  autgroup := [I, Matrix(2,[K| -1,0,0,1])];
+  aa := beta;
+  bb := 0;
+  cc := 0;
+  dd := 1;
+  f := MinimalPolynomial((aa*alpha + bb)/(cc*alpha + dd),K);
+  if curves then
+    Cs := curves_from_divisor(f,autgroup);
+  else
+    Cs := [<f,#autgroup,autgroup>];
+  end if;
+
+  for C in Cs do
+    checksum6 +:= 1/C[2]; 
+    if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+    if passback then Clist cat:= [C]; end if;
+  end for;
+
  
   
-  // Second
-  // oo, beta, theta    for theta = b*beta + a with a up to sign and b nonzero and with (b,a) != (1,0)
-  // with a nonzero:
-  reps cat:= [<Matrix(2,[(b*beta+a)-beta, beta, 0, 1]), 1, [I]> : b,a in K | a eq Sort([a,-a])[1] and b ne 0 and a ne 0];
+  // Second: triples (oo, beta, theta), where theta = b*beta + a with a distinct
+  // up to sign and b nonzero and with (b,a) != (1,0).
+  // The ones with a nonzero...
+  
+  autgroup := [I];  
 
-  // with a = 0, in which case we get an involution:
-  aut := Matrix(2,[K| -1,0,0,1]);
-  reps cat:= [<Matrix(2,[(b*beta)-beta, beta, 0, 1]), 2, [aut]> : b in K | b ne 0 and b ne 1];
+  for a,b in K do
+    if a gt -a or a eq 0 or b eq 0 then continue b; end if;
+    aa := (b*beta+a)-beta;
+    bb := beta;
+    cc := 0;
+    dd := 1;
+    f := MinimalPolynomial((aa*alpha + bb)/(cc*alpha + dd),K);
+    if curves then
+      Cs := curves_from_divisor(f,autgroup);
+    else
+      Cs := [<f,#autgroup,autgroup>];
+    end if;
 
+    for C in Cs do
+      checksum6 +:= 1/C[2]; 
+      if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+      if passback then Clist cat:= [C]; end if;
+    end for;
+  end for;
+  
+  // ... and the ones with a = 0, in which case we get an involution.
+  
+  autgroup := [I, Matrix(2,[K| -1,0,0,1])];
+  
+  for b in K do
+    if b eq 0 or b eq 1 then continue b; end if;
+    
+    aa := (b*beta)-beta;
+    bb := beta;
+    cc := 0;
+    dd := 1;
+    f := MinimalPolynomial((aa*alpha + bb)/(cc*alpha + dd),K);
+    if curves then
+      Cs := curves_from_divisor(f,autgroup);
+    else
+      Cs := [<f,#autgroup,autgroup>];
+    end if;
+
+    for C in Cs do
+      checksum6 +:= 1/C[2]; 
+      if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+      if passback then Clist cat:= [C]; end if;
+    end for;
+  end for;
+  
+  // Third: triples (beta, -beta, theta) for theta unique up to the action of
+  // the subgroup of PGL(2,K) that fixes beta.
   
   orbitreps := betaorbitreps(K,beta);
-  //remove the rational orbit.
+  // This is a set of orbit representatives for the action on 
+  // P^1(L)\{beta,beta^q} of the subgroup of PGL(2,K) that fixes beta.
+  // Note that this has size O(q). 
+  
+  // Remove the rational orbit.
   orbitreps := [a : a in orbitreps | not a in K];
   
-  // Third
-  // beta, -beta, theta for theta in orbitreps.
   for theta in orbitreps do
     // We have an automorphism.
     aut := Matrix(2,[K|ns + Norm(theta,K), -ns*Trace(theta,K), 
                      Trace(theta,K), -ns -Norm(theta,K)]);
-    reps cat:= [<Matrix(2,[beta*(beta+theta), beta*(theta-beta), beta+theta, beta-theta]), 2, [aut]>];
+    autgroup := [I, aut];
+    
+    aa := beta*(beta+theta);
+    bb := beta*(theta-beta);
+    cc := beta+theta;
+    dd := beta-theta;
+    
+    f := MinimalPolynomial((aa*alpha + bb)/(cc*alpha + dd),K);
+    if curves then
+      Cs := curves_from_divisor(f,autgroup);
+    else
+      Cs := [<f,#autgroup,autgroup>];
+    end if;
+
+    for C in Cs do
+      checksum6 +:= 1/C[2]; 
+      if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+      if passback then Clist cat:= [C]; end if;
+    end for;
   end for;
-  
-  LnotKorbetas := [a : a in L | not a in K and not a in {beta,beta^q}];    
-  
-  
+    
+    
   // We will have beta, eta, theta. We want to distiguish between this ordered
   // triple and its rotations. 
-  
   
   for eta in orbitreps do
     
@@ -3627,14 +3355,22 @@ function sixpoints6(K);
     
     // The map x --> aaa + bbb/(x - aaa) takes beta^q to beta and eta^q to eta.
     
-    // compute as much of our crossratios as possible at this point.
+    // Compute as much of our crossratios as we can at this point.
     jj1 := (beta + eta) / (2 * beta);
     jj2 := (eta - beta) / (eta - etaq);
     jj3 := 1 / (eta - beta);
     
 
-    for theta in LnotKorbetas do
-      if theta eq eta or theta eq etaq then continue theta; end if;
+    // Now we want theta to run over all elements of L that are not in K
+    // and not equal to beta or beta^q and not equal to eta or eta^q.
+    
+    betaq := beta^q;
+
+    for theta in L do
+      if theta in K then continue theta; end if;
+      if theta eq beta or theta eq betaq then continue theta; end if;
+      if theta eq eta  or theta eq etaq  then continue theta; end if;
+      
       // Also check that [beta, eta, theta] is minimal under conjugation.
       thetaq := theta^q;
       thetaprime := aaa + bbb/(thetaq - aaa);
@@ -3642,19 +3378,13 @@ function sixpoints6(K);
 
       tracetheta := Trace(theta,K);
       normtheta := Norm(theta,K);
-
-
-
-//      j1 := crossratio(beta,eta,theta,-beta);
-//      j2 := crossratio(eta,theta,beta,etaq);
-//      j3 := crossratio(theta,beta,eta,thetaq);
       
       j1 := jj1 *   (beta - theta) / ( eta - theta);
       j2 := jj2 *   (etaq - theta) / (beta - theta);
       j3 := jj3 *   (eta  - theta) * (beta - thetaq) / (theta - thetaq) ;
 
       if #{j1,j2,j3} eq 1 then
-        // do we have an involution?
+        // Do we have an involution?
         aut := I;
         order := 1;
         if (normtheta+ns) * traceeta eq (normeta+ns) * tracetheta then
@@ -3677,15 +3407,34 @@ function sixpoints6(K);
         c := autentries[3];
         if c eq 0 then c := autentries[4]; end if;
         aut3 := Matrix(2,[K! (a/c) : a in autentries]);
-        order3 := 3;
 
-        reps cat:= [<Matrix(2,[beta*(eta-theta), eta*(theta-beta), eta-theta, theta-beta]), 3*order, [aut*aut3]>];
+        gen := aut*aut3;
+        autgroup := [gen^i : i in [0..3*order-1]];
+        
+        aa := beta*(eta-theta);
+        bb := eta*(theta-beta);
+        cc := eta-theta;
+        dd := theta-beta;
+
+        f := MinimalPolynomial((aa*alpha + bb)/(cc*alpha + dd),K);
+        if curves then
+          Cs := curves_from_divisor(f,autgroup);
+        else
+          Cs := [<f,#autgroup,autgroup>];
+        end if;
+
+        for C in Cs do
+          checksum6 +:= 1/C[2]; 
+          if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+          if passback then Clist cat:= [C]; end if;
+        end for;
+
         continue theta;
       end if;
         
-      if #{j1,j2,j3} eq 2 then
+      if #{j1,j2,j3} eq 2 and j1 eq j2 then
         // do we have an involution?
-        aut := I;
+        autgroup := [I];
         order := 1;
         if (normtheta+ns) * traceeta eq (normeta+ns) * tracetheta then
           order := 2;
@@ -3698,23 +3447,37 @@ function sixpoints6(K);
           c:=aut2eltseq[3]; 
           if c eq 0 then c:=aut2eltseq[4]; end if;
           aut := Matrix(2,[K!(a/c): a in aut2eltseq]);
+          autgroup := [I, aut];
         end if;      
 
-        if j1 eq j2 then
-          reps cat:= [<Matrix(2,[beta*(eta-theta), eta*(theta-beta), eta-theta, theta-beta]), order, [aut]>];
+        aa := beta*(eta-theta);
+        bb := eta*(theta-beta);
+        cc := eta-theta;
+        dd := theta-beta;
+
+        f := MinimalPolynomial((aa*alpha + bb)/(cc*alpha + dd),K);
+        if curves then
+          Cs := curves_from_divisor(f,autgroup);
+        else
+          Cs := [<f,#autgroup,autgroup>];
         end if;
+
+        for C in Cs do
+          checksum6 +:= 1/C[2]; 
+          if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+          if passback then Clist cat:= [C]; end if;
+        end for;
+
         continue theta;
       end if;
 
-      // so now the j's are distinct
+      // So now the j's are distinct.
       if (j1 eq j2^q) or (j2 eq j3^q) or (j3 eq j1^q) then
         if j1 eq j2^q then
-        // do we have an involution?
-          aut := I;
-          order := 1;
+        // Do we have an involution?
+          autgroup := [I];
+
           if (normtheta+ns) * traceeta eq (normeta+ns) * tracetheta then
-            order := 2;
-        
             aut2eltseq := [
                           -beta*normeta + ns*etaq - (normeta + ns)*thetaq + (beta + etaq)*normtheta,
                            beta*( (normeta - beta*etaq)*theta  + (normeta + beta*eta)*thetaq  - traceeta*normtheta),
@@ -3723,9 +3486,26 @@ function sixpoints6(K);
             c:=aut2eltseq[3]; 
             if c eq 0 then c:=aut2eltseq[4]; end if;
             aut := Matrix(2,[K!(a/c): a in aut2eltseq]);
+            autgroup := [I, aut];
           end if;      
 
-          reps cat:= [<Matrix(2,[beta*(eta-theta), eta*(theta-beta), eta-theta, theta-beta]), order, [aut]>];
+          aa := beta*(eta-theta);
+          bb := eta*(theta-beta);
+          cc := eta-theta;
+          dd := theta-beta;
+
+          f := MinimalPolynomial((aa*alpha + bb)/(cc*alpha + dd),K);
+          if curves then
+            Cs := curves_from_divisor(f,autgroup);
+          else
+            Cs := [<f,#autgroup,autgroup>];
+          end if;
+
+          for C in Cs do
+            checksum6 +:= 1/C[2]; 
+            if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+            if passback then Clist cat:= [C]; end if;
+          end for;
         end if;
         continue theta;
       end if;
@@ -3734,15 +3514,13 @@ function sixpoints6(K);
       p2 := MinimalPolynomial(j2,K);
       p3 := MinimalPolynomial(j3,K);
       
-//      assert #{p1,p2,p3} eq 3;
+      // These are distinct. Only continue to process if p1 is the smallest.
       
       if p1 eq Sort([p1,p2,p3])[1] then
-        // do we have an involution?
-        aut := I;
-        order := 1;
+      
+        // Do we have an involution?
+        autgroup := [I];
         if (normtheta+ns) * traceeta eq (normeta+ns) * tracetheta then
-          order := 2;
-        
           aut2eltseq := [
                         -beta*normeta + ns*etaq - (normeta + ns)*thetaq + (beta + etaq)*normtheta,
                          beta*( (normeta - beta*etaq)*theta  + (normeta + beta*eta)*thetaq  - traceeta*normtheta),
@@ -3751,147 +3529,57 @@ function sixpoints6(K);
           c:=aut2eltseq[3]; 
           if c eq 0 then c:=aut2eltseq[4]; end if;
           aut := Matrix(2,[K!(a/c): a in aut2eltseq]);
+          autgroup := [I, aut];
         end if;      
 
+        aa := beta*(eta-theta);
+        bb := eta*(theta-beta);
+        cc := eta-theta;
+        dd := theta-beta;
 
+        f := MinimalPolynomial((aa*alpha + bb)/(cc*alpha + dd),K);
+        if curves then
+          Cs := curves_from_divisor(f,autgroup);
+        else
+          Cs := [<f,#autgroup,autgroup>];
+        end if;
 
-        reps cat:= [<Matrix(2,[beta*(eta-theta), eta*(theta-beta), eta-theta, theta-beta]), order, [aut]>];
+        for C in Cs do
+          checksum6 +:= 1/C[2]; 
+          if output then printf "%o, %o\n", Eltseq(C[1]),C[2]; end if; 
+          if passback then Clist cat:= [C]; end if;
+        end for;
+        
       end if;
     end for;
   end for;
   
-  M := ext<L | 3>;
-  alpha := Roots(irreducible3(K),M)[1][1];
+  assert checksum6 eq (q^3 + q - 1)/6;
   
-  polys6 := [<MinimalPolynomial((mat[1][1,1]*alpha + mat[1][1,2])/(mat[1][2,1]*alpha + mat[1][2,2]),K), mat[2], [mat[3][1]^i : i in [0..mat[2]-1]]> : mat in reps];
+  if outputfile ne "" then
+    UnsetOutputFile();
+  end if;
   
-  assert &+[1/m[2] : m in polys6] eq (q^3 + q - 1)/6;
-  return polys6;
+  return Clist;
 end function;
 
 
 /*
 ================================================================================
-Functions for gettng all orbits of Sym^6, and for getting curves from
-elements of Sym^6.
+Functions for getting all hyperelliptic curves of genus two.
 ================================================================================
 */
 
-function sixpoints(K);
-  // Return the union of the output of all the various sixpoints* functions.
-  biglist := sixpoints6(K);
-  biglist cat:= sixpoints51(K);
-  biglist cat:= sixpoints42(K);
-  biglist cat:= sixpoints411(K);
-  biglist cat:= sixpoints33(K);
-  biglist cat:= sixpoints321(K);
-  biglist cat:= sixpoints3111(K);
-  biglist cat:= sixpoints222(K);
-  biglist cat:= sixpoints2211(K);
-  biglist cat:= sixpoints21111(K);
-  biglist cat:= sixpoints111111(K);
-  return biglist;
-end function;
-
-//------------------------------------------------------------------------------
-
-function curves(flist)
-  // Given a list of separable polynomials of degree 2g+1 and 2g+2 over a 
-  // finite field K of odd characteristic, each given with the set of
-  // elements of PGL(2,K) that map its set of roots to itself, 
-  // produce the list of curves (and automorphism groups) with these
-  // roots as Weierstrass points. 
-  R := Parent(flist[1][1]);
-  x := R.1;
-  K := BaseRing(R);
-  ns := nonsquare(K);
+function hyperelliptic2(K : passback := true, curves := true, output := false, outputfile := "");
+  // Return the union of the output of all the various genustwoxx functions.
   
-  curvelist := [];
-
-  // What degrees are we looking at? Determine this from the first polynomial.
-  degree := Degree(flist[1][1]);
-  if 1 eq degree mod 2 then degree +:=1; end if;
-  
-  for triple in flist do
-    f, n, auts := Explode(triple);
-    if n eq 1 then        
-      // Could use "1 eq n mod 2" here, but Magma runs the code slightly faster 
-      // with the more restrictive condition.
-      curveauts := auts;
-    else
-      curveauts := [];
-      for A in auts do
-        num := A[1,1]*x + A[1,2];
-        den := A[2,1]*x + A[2,2];
-        g := Numerator(Evaluate(f,num/den)*den^degree);
-        lead := Coefficient(g,Degree(g));
-//      assert g eq f * lead;
-        if IsSquare(lead) then 
-          curveauts cat:= [A];
-        end if;
-      end for;
-    end if;
-    
-    if #curveauts eq n then
-      // We have a nontrivial twist.
-      curvelist cat:= [<   f, 2*n, curveauts>];
-      curvelist cat:= [<ns*f, 2*n, curveauts>];
-    else
-      curvelist cat:= [<   f,   n, curveauts>];
-    end if;
-  end for;
-  
-  return curvelist;
+  Clist    := genustwo6 (K : passback := passback, curves := curves, output := output, outputfile := outputfile);
+  Clist cat:= genustwo51(K : passback := passback, curves := curves, output := output, outputfile := outputfile);
+  Clist cat:= genustwo4x(K : passback := passback, curves := curves, output := output, outputfile := outputfile);
+  Clist cat:= genustwo3x(K : passback := passback, curves := curves, output := output, outputfile := outputfile);
+  Clist cat:= genustwo2x(K : passback := passback, curves := curves, output := output, outputfile := outputfile);
+  Clist cat:= genustwo1x(K : passback := passback, curves := curves, output := output, outputfile := outputfile);
+  return Clist;
 end function;
 
 
-function curves_nomem(flist)
-  // Given a list of separable polynomials of degree 2g+1 and 2g+2 over a 
-  // finite field K of odd characteristic, each given with the set of
-  // elements of PGL(2,K) that map its set of roots to itself, 
-  // compute for each such polynomial the list of curves (and automorphism 
-  // groups) with these roots as Weierstrass points. 
-  // Do not save or output these --- this program is only used for timing.
-  
-  R := Parent(flist[1][1]);
-  x := R.1;
-  K := BaseRing(R);
-  ns := nonsquare(K);
-  
-//  curvelist := [];
-
-  // What degrees are we looking at? Determine this from the first polynomial.
-  degree := Degree(flist[1][1]);
-  if 1 eq degree mod 2 then degree +:=1; end if;
-  
-  for triple in flist do
-    f, n, auts := Explode(triple);
-    if n eq 1 then        
-      // Could use "1 eq n mod 2" here, but Magma runs the code slightly faster 
-      // with the more restrictive condition.
-      curveauts := auts;
-    else
-      curveauts := [];
-      for A in auts do
-        num := A[1,1]*x + A[1,2];
-        den := A[2,1]*x + A[2,2];
-        g := Numerator(Evaluate(f,num/den)*den^degree);
-        lead := Coefficient(g,Degree(g));
-//      assert g eq f * lead;
-        if IsSquare(lead) then 
-          curveauts cat:= [A];
-        end if;
-      end for;
-    end if;
-    
-//    if #curveauts eq n then
-//      // We have a nontrivial twist.
-//      curvelist cat:= [<   f, 2*n, curveauts>];
-//      curvelist cat:= [<ns*f, 2*n, curveauts>];
-//    else
-//      curvelist cat:= [<   f,   n, curveauts>];
-//    end if;
-  end for;
-  
-  return true;
-end function;
