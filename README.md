@@ -2,8 +2,8 @@
 
 This directory contains two [Magma](http://magma.maths.usyd.edu.au/magma/) program files that can be used to enumerate
 hyperelliptic curves of genus 2 or 3 over finite fields of odd characteristic. The algorithms used are based on the
-one described in the paper [&ldquo;Enumerating hyperelliptic curves over finite fields in quasilinear time,&rdquo;](https://doi.org/10.48550/arXiv.2401.15255)
-by Everett W. Howe.
+ones described in the papers [&ldquo;Enumerating hyperelliptic curves over finite fields in quasilinear time&rdquo;](https://doi.org/10.1007/s40993-024-00594-7)
+and [&ldquo;Enumerating places of **P**<sup>1</sup> up to automorpshisms of **P**<sup>1</sup> in quasilinear time&rdquo;](https://doi.org/10.48550/arXiv.2407.05534), by Everett W. Howe.
 
 The two program files are
 
