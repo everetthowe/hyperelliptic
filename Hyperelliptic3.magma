@@ -1,6 +1,6 @@
 // Hyperelliptic3.magma
-// Version 2.00
-// 8 June 2025
+// Version 2.01
+// 6 July 2025
 
 // Code related to two papers:
 
@@ -116,7 +116,12 @@ orbitlabel()    : Given an element of PGL(2,L), where L is the quadratic
 
 VERSION HISTORY:
 
+Version 2.01, 6 July 2025
 
+Corrected an error in genusthree71() that would, in certain circumstance,
+cause the program to fail with an error for prime powers congruent to 1 mod 7.
+
+--------------------------------------------------------------------------------
 Version 2.0, 8 June 2025
 
 Completely rewritten. The old "eightpoints" functions have been replaced by the
@@ -4938,7 +4943,7 @@ function genusthree71(K : passback := true, curves := true, output := false, out
           // ...and run through possible constant terms, avoiding these
           // bad ones.
 
-          // The divisors we get for these polynomails have trivial automorphism
+          // The divisors we get for these polynomials have trivial automorphism
           // groups.
           
           autgroup := [I];
@@ -4983,7 +4988,7 @@ function genusthree71(K : passback := true, curves := true, output := false, out
             autgroup := [];
             for a in auts do
               if a0*a^7 lt a0 then continue a0; end if;          
-              if a0*a^7 eq a0 then autgroup cat:= [a]; end if; 
+              if a0*a^7 eq a0 then autgroup cat:= [Matrix(2,[a,0,0,1])]; end if; 
             end for;
 
             f := g + a0;
@@ -5118,7 +5123,7 @@ function genusthree71(K : passback := true, curves := true, output := false, out
             autgroup := [];
             for a in auts do
               if [a1*a^6, a0*a^7] lt [a1,a0] then continue a0; end if;          
-              if [a1*a^6, a0*a^7] eq [a1,a0] then autgroup cat:= [a]; end if; 
+              if [a1*a^6, a0*a^7] eq [a1,a0] then autgroup cat:= [Matrix(2,[a,0,0,1])]; end if; 
             end for;
             f := g + a1*x + a0;
             D := Discriminant(f);
@@ -6645,5 +6650,3 @@ function verify(K : efficient:=true, verbose:=true);
   
   return good;
 end function;
-
-
