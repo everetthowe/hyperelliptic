@@ -1458,7 +1458,7 @@ place of degree 1. Put the degree-1 place at oo.
 */
   
   
-function genusfourx1(K : passback := true, curves := true, output := false, outputfile := "", morethan71 := false)
+function genusfourx1(K : passback := true, curves := true, output := false, outputfile := "")
   // K is a finite field of size q = p^e, with p odd.
   // Compute representatives of all isomorphism classes of genus-4 hyperelliptic
   // curves over K (if curves = true) or of degree-8 divisors (if curves = false)
