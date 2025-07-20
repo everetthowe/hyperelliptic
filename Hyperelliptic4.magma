@@ -157,10 +157,8 @@ places_from_Frobenius_function(F,d)
 
 VERSION HISTORY:
 
-Version 2.01, 6 July 2025
-
-Corrected an error in genusthree71() that would, in certain circumstance,
-cause the program to fail with an error for prime powers congruent to 1 mod 7.
+Version 0.90, 19 July 2025
+Initial beta version.
 
 */
 
